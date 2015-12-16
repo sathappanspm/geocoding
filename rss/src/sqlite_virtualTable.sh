@@ -1,0 +1,1 @@
+INSERT INTO geonames_fullText SELECT g.id, g.asciiname||', '||a.asciiname||', '||c.country, g.name||, ||a.name||, ||c.country, a.name, c.country, g.population, g.latitude, g.longitude FROM allcities g, alladmins a, allcountries c where g.countryCode = c.ISO AND g.countryCode||'.'||g.admin1 = a.key
