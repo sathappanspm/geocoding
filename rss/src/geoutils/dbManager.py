@@ -9,6 +9,7 @@
 import unicodecsv
 import sqlite3
 import sys
+from . import GeoPoint
 
 unicodecsv.field_size_limit(sys.maxsize)
 
@@ -38,7 +39,7 @@ class SQLiteWrapper(BaseDB):
 
     def query(self, stmt=None, items=[]):
         result = self.cursor.execute(stmt)
-        return [dict(l) for l in result.fetchall()]
+        return [GeoPoint(**dict(l)) for l in result.fetchall()]
 
     def insert(self, msg, dup_id):
         return

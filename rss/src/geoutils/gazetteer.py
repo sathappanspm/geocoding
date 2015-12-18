@@ -10,9 +10,10 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-from dbManager import SQLiteWrapper
+from .dbManager import SQLiteWrapper
 import pandas as pd
-import ipdb
+from . import GeoPoint, LocationDistribution
+#import ipdb
 
 
 class BaseGazetteer(object):
@@ -29,7 +30,7 @@ class BaseGazetteer(object):
         pass
 
 
-class Geonames(BaseGazetteer):
+class GeoNames(BaseGazetteer):
     def __init__(self, dbpath, dbname, tables=None, priority=None):
         self.db = SQLiteWrapper(dbpath)
         self.dbname = dbname
@@ -44,7 +45,7 @@ class Geonames(BaseGazetteer):
         else:
             self.priority = priority
 
-    def query(self, name, absoluteMatch=False):
+    def query(self, name, min_popln=0):
         """
         Search the locations DB for the given name
         params:
@@ -59,80 +60,45 @@ class Geonames(BaseGazetteer):
         #result[t] = self.score([dict(r) for r in res for i in r])
 
         country = self._querycountry(name)
-        admin = self._querystate(name)
-        city = self._querycity(name)
+        if country == []:
+            admin = self._querystate(name)
+            city = self._querycity(name, min_popln=min_popln)
+        else:
+            admin = []
+            city = []
         #res = self.score(city, admin, country)
-        return (city, country, admin)
+        return LocationDistribution(city + country + admin)
 
     def _querycountry(self, name):
         """
         Check if name is a country name
         """
-        return self.db.query(u"SELECT * FROM allcountries WHERE country='{0}'".format(name))
+        return self.db.query(u"SELECT *, 'country' as 'ltype' FROM allcountries WHERE country='{0}'".format(name))
 
     def _querystate(self, name):
         """
         Check if name is an admin name
         """
-        stmt = u"SELECT * FROM alladmins WHERE name='{0}' or asciiname='{0}'".format(name)
+        stmt = u"SELECT *, 'admin' as 'ltype' FROM alladmins WHERE name='{0}' or asciiname='{0}'".format(name)
         return self.db.query(stmt)
 
-    def _querycity(self, name):
+    def _querycity(self, name, min_popln=0):
         """
         Check if name is a city name
         """
-        stmt = u"SELECT * FROM allcities WHERE name='{0}' or asciiname='{0}'".format(name)
+        stmt = u"""SELECT *, 'city' as 'ltype' FROM allcities WHERE
+                (name='{0}' or asciiname='{0}') and population >= {1}""".format(name, min_popln)
         res = self.db.query(stmt)
         if res:
-            df = pd.DataFrame(res)
+            df = pd.DataFrame([i.__dict__ for i in res])
+            if any(df["ltype"] == "city"):
+                df = df[df["ltype"] == "city"]
             df['population'] = (df['population'] + 1).astype(float)
             df['confidence'] = (df['population']) / (2 * (df['population'].sum())) + 0.5
-            res = df.to_dict(orient='records')
+
+            res = [GeoPoint(**d) for d in df.to_dict(orient='records')]
 
         return res
-
-    def score(self, city, admin, country):
-        """
-        score each entry based on priority policy
-        """
-        # TODO: implement priority policy
-
-        scoresheet = {}
-
-        def update(locInfo):
-            fulltuple = '//'.join([locInfo['name'], locInfo['countryCode'], locInfo['admin1']])
-            st_tuple = '//' + locInfo['countryCode'] + '//' + locInfo['admin1']
-            cotuple = '//' + locInfo['countryCode'] + '//'
-            pvalue = locInfo['confidence'] ** 2
-            if fulltuple not in scoresheet:
-                scoresheet[fulltuple] = 0.0
-
-            if st_tuple not in scoresheet:
-                scoresheet[st_tuple] = 0.0
-
-            if cotuple not in scoresheet:
-                scoresheet[cotuple] = 0.0
-
-            scoresheet[fulltuple] += pvalue
-            scoresheet[st_tuple] += pvalue * 0.7
-            scoresheet[cotuple] += pvalue * 0.5
-            return
-
-        _ = [update(ci) for ci in city]
-        for a in admin:
-            key = "//" + a['key'].replace(".", "//")
-            if key not in scoresheet:
-                scoresheet[key] = 0.5
-            else:
-                scoresheet[key] += scoresheet[key]
-
-        for co in country:
-            key = "//" + co['ISO'] + "//"
-            if key not in scoresheet:
-                scoresheet[key] = 0.5
-            else:
-                scoresheet[key] += scoresheet[key]
-        return scoresheet
 
     def get_locInfo(self, locId):
         """
@@ -140,3 +106,6 @@ class Geonames(BaseGazetteer):
         longitude etc.
         """
         return self.db.query("SELECT * FROM geonames_fullText where id='{}'".format(locId))
+
+    def get_country(self, cc2):
+        return self.db.query("SELECT * FROM allcountries where ISO='{}'".format(cc2))

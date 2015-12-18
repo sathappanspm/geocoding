@@ -14,8 +14,9 @@ __version__ = "0.0.1"
 import json
 from unidecode import unidecode
 import gzip
-from search import Search
 import ipdb
+from geocode import BaseGeo
+from geoutils import encode
 
 def decode(s):
     try:
@@ -23,49 +24,39 @@ def decode(s):
     except:
         return s
 
+
+CODES={"Argentina": "AR", "Brazil": "BR", "Colombia": "CO",  "Chile": "CL", "Ecuador": "EC",
+       "El Salvador": "SV", "Mexico": "MX", "Venezuela": "VE", "Paraguay": "PY",
+       "Uruguay": "UY"}
+
 #s = SQLiteWrapper("./WG_dump.sql")
-s = Search("./Geonames_dump.sql", "geonames_fullText")
 # with open("../data/gsr_enriched_201412.txt") as infile:
-with gzip.open("../data/gsr_basisEnriched_201412.txt.gz") as infile:
+#with open("../data/gsr_basisEnriched_201412.txt.gz") as infile:
+with open("./gsrfiltered.txt") as infile:
     cnt = 0
+    tcnt = 0
+    bg = BaseGeo(min_popln = 1)
+    err = 0
+    ccnt = 0
     for l in infile:
         j = json.loads(l)
-        cnt += 1
-        # if not (j["location"][2] == "-" or j["location"][2] == ""):
-        #    k = j["location"][2]
-        #    try:
-        #        stmt = u"select * from WorldGazetteer where name='%s'" % decode(k)
-        #        res = s.query(stmt)
-        #        if len(res) == 0:
-        #            raise Exception("null")
-        #        #q = res.next()
-        #    except Exception, e:
-        #        print j["location"]
-        if cnt > 11:
-            break
-        candCities, candAdmins, candCountries = [], [], []
-        pr = 0
-        for k in j["BasisEnrichment"]["entities"]:
-            if k["neType"] == "LOCATION":
-                ci, co, ad = s.query(decode(k['expr']))
-                candCities += ci
-                candCountries += co
-                candAdmins += ad
-                pr += 1
-        print j['gsrId'],
-        if pr == 0:
-            print "no loc data",
-        res = s.score(candCities, candAdmins, candCountries)
-        if res:
-            print max(res, key=lambda x: res[x]), j['location']
-            ipdb.set_trace()
+        tcnt += 1
+        try:
+            lmap, loc = bg.geocode(j)
+        except Exception, e:
+            err += 1
+            continue
+        country = loc.split("/")[0]
+        if country == CODES[j["location"][0]]:
+            cnt += 1
         else:
-            print candCountries, candCities, candAdmins
-                #print dict(res[0])
-                #try:
-                #    res = s.query(u"select * from geonames where name='{0}' or alternatenames like '*{0}*'".format(decode(k['expr'])))
-                #    if len(res) == 0:
-                #        raise Exception("null")
-                #except Exception, e:
-                #    #print str(e)
-                #    print unidecode(k['expr'])
+            for l in lmap:
+                if j["location"][-1].encode("utf-8") in lmap[l].__str__():
+                    ccnt += 1
+
+        if tcnt % 100 == 0:
+            print cnt, ccnt, err, tcnt
+            #if tcnt == 1000:
+            break
+
+print cnt, ccnt, tcnt
