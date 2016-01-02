@@ -55,15 +55,16 @@ class GeoPoint(GeoData):
         self.ltype = ltype
         if "name" in kwargs:
             if ltype == "admin":
-                self.country, self.admin1 = kwargs['key'].split(".")
+                self.admin1 = kwargs['name']
+            #    self.country, self.admin1 = kwargs['key'].split(".")
             elif ltype == "city":
                 self.city = kwargs["name"]
 
             del(kwargs['name'])
 
-        if ltype == "country" or "ISO" in kwargs:
-            self.country = kwargs['ISO']
-            del(kwargs['ISO'])
+        #if ltype == "country" or "ISO" in kwargs:
+            #self.country = kwargs['ISO']
+            #del(kwargs['ISO'])
 
         if 'featureClass' in kwargs:
             self.ltype = FEATURE_MAP[kwargs['featureClass']]
@@ -71,6 +72,9 @@ class GeoPoint(GeoData):
         # set all remaining extra information in kwargs
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
+
+        #if len(self.country) == 2:
+        #    ipdb.set_trace()
 
     def to_dict(self):
         return self.__dict__
@@ -87,7 +91,7 @@ class LocationDistribution(GeoData):
         self.country = {}
         self.admin1 = {}
         self.city = {}
-        self.baseObj = {}
+        self.realizations = {}
         if isinstance(LocObj, list) and len(LocObj) == 1:
             LocObj = LocObj[0]
 
@@ -95,11 +99,11 @@ class LocationDistribution(GeoData):
             self.country[LocObj.country] = 1.0
             self.admin1["/".join([LocObj.country, LocObj.admin1])] = 1.0
             self.city[LocObj.__str__()] = 1.0
-            self.baseObj[LocObj.__str__()] = LocObj
+            self.realizations[LocObj.__str__()] = LocObj
         else:
             for l in LocObj:
                 if l.ltype != 'city':
-                    pvalue = 0.51
+                    pvalue = 0.5
                 else:
                     pvalue = l.confidence
 
@@ -108,7 +112,7 @@ class LocationDistribution(GeoData):
                     #    raise Exception("Duplicate value-{}-{}".format(l.__str__(), l.featureClass))
                     self.city[l.__str__()] = pvalue
 
-                if l.__str__() in self.baseObj:
+                if l.__str__() in self.realizations:
                     continue
 
                 if l.country not in self.country:
@@ -120,16 +124,20 @@ class LocationDistribution(GeoData):
 
                 self.country[l.country].append(pvalue)
                 self.admin1["/".join([l.country, l.admin1, ""])].append(pvalue)
-                self.baseObj[l.__str__()] = l
+                self.realizations[l.__str__()] = l
 
             for co in self.country:
-                self.country[co] = max(self.country[co]) ** 2
+                # p^2 d^2
+                self.country[co] = 0.49 * max(self.country[co]) ** 2
 
             for ad in self.admin1:
-                self.admin1[ad] = max(self.admin1[ad]) ** 2
+                self.admin1[ad] = 0.7 * max(self.admin1[ad]) ** 2
 
     def __nonzero__(self):
-        return self.baseObj != {}
+        return self.realizations != {}
+
+    def isEmpty(self):
+        return (not self.__nonzero__())
 
     def __eq__(self, cmpObj):
-        return self.baseObj == cmpObj.baseObj
+        return self.realizations == cmpObj.realizations

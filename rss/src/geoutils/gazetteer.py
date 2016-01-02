@@ -12,8 +12,7 @@ __version__ = "0.0.1"
 
 from .dbManager import SQLiteWrapper
 import pandas as pd
-from . import GeoPoint, LocationDistribution
-#import ipdb
+from . import GeoPoint
 
 
 class BaseGazetteer(object):
@@ -67,32 +66,69 @@ class GeoNames(BaseGazetteer):
             admin = []
             city = []
         #res = self.score(city, admin, country)
-        return LocationDistribution(city + country + admin)
+        ldist = (city + country + admin)
+        if city == [] and country == [] and admin == []:
+            #ipdb.set_trace()
+            ldist = self._query_alternatenames(name, min_popln)
+        return ldist
 
     def _querycountry(self, name):
         """
         Check if name is a country name
         """
-        return self.db.query(u"SELECT *, 'country' as 'ltype' FROM allcountries WHERE country='{0}'".format(name))
+        return self.db.query(u"""SELECT *, 'country' as 'ltype'
+                             FROM allcountries WHERE country='{0}'""".format(name))
 
     def _querystate(self, name):
         """
         Check if name is an admin name
         """
-        stmt = u"SELECT *, 'admin' as 'ltype' FROM alladmins WHERE name='{0}' or asciiname='{0}'".format(name)
+        stmt = u"""SELECT a.geonameid, a.name as 'admin1', b.country as 'country',
+                   'admin' as 'ltype' FROM
+                alladmins as a, allcountries as b WHERE (name='{0}' or asciiname='{0}')
+                and substr(a.key, 0, 3)=b.ISO""".format(name)
         return self.db.query(stmt)
 
     def _querycity(self, name, min_popln=0):
         """
         Check if name is a city name
         """
-        stmt = u"""SELECT *, 'city' as 'ltype' FROM allcities WHERE
-                (name='{0}' or asciiname='{0}') and population >= {1}""".format(name, min_popln)
+        stmt = u"""SELECT a.id as geonameid, a.name as 'city',
+               a.population,a.latitude, a.longitude, c.country as 'country',
+               b.name as 'admin1', 'city' as 'ltype',
+               a.featureCode, a.cc2 as 'countryCode'
+               FROM allcities a, alladmins b, allcountries c WHERE
+               (a.name='{0}' or a.asciiname='{0}') and a.population >= {1}
+               and a.countryCode=c.ISO and a.countryCode||'.'||a.admin1 = b.key""".format(name, min_popln)
         res = self.db.query(stmt)
         if res:
             df = pd.DataFrame([i.__dict__ for i in res])
-            if any(df["ltype"] == "city"):
+            if any(df["ltype"] == "city") and any(df["ltype"] != "city"):
                 df = df[df["ltype"] == "city"]
+
+            df['population'] = (df['population'] + 1).astype(float)
+            df['confidence'] = (df['population']) / (2 * (df['population'].sum())) + 0.5
+
+            res = [GeoPoint(**d) for d in df.to_dict(orient='records')]
+
+        return res
+
+    def _query_alternatenames(self, name, min_popln=0):
+        """
+        check if name matches alternate name
+        """
+        stmt = u"""SELECT a.id as geonameid, a.name as 'city', a.population,
+                'city' as 'ltype', a.latitude, a.longitude, c.country as country, b.name as admin1
+                FROM alternatenames as d,
+                allcities as a, alladmins as b,
+                allcountries as c WHERE a.id=d.geonameId and alternatename='{0}'
+                and a.countryCode=c.ISO and a.countryCode||'.'||a.admin1 = b.key and
+                a.population >= {1}""".format(name, min_popln)
+        res = self.db.query(stmt)
+        if res:
+            df = pd.DataFrame([i.__dict__ for i in res])
+            #if any(df["ltype"] == "city"):
+            #    df = df[df["ltype"] == "city"]
             df['population'] = (df['population'] + 1).astype(float)
             df['confidence'] = (df['population']) / (2 * (df['population'].sum())) + 0.5
 
@@ -105,7 +141,15 @@ class GeoNames(BaseGazetteer):
         return full loc tuple of name, admin1 name, country, population,
         longitude etc.
         """
-        return self.db.query("SELECT * FROM geonames_fullText where id='{}'".format(locId))
+        stmt = u"""SELECT a.id as geonameid, a.name as 'city',
+               a.population,a.latitude, a.longitude, c.country as 'country',
+               b.name as 'admin1', 'city' as 'ltype',
+               a.featureCode, a.cc2 as 'countryCode'
+               FROM allcities a, alladmins b, allcountries c WHERE
+               a.id='{}' and a.countryCode=c.ISO and
+               a.countryCode||'.'||a.admin1 = b.key""".format(locId)
+
+        return self.db.query(stmt)
 
     def get_country(self, cc2):
         return self.db.query("SELECT * FROM allcountries where ISO='{}'".format(cc2))
