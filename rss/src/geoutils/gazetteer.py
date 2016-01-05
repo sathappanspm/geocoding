@@ -70,6 +70,10 @@ class GeoNames(BaseGazetteer):
         if city == [] and country == [] and admin == []:
             #ipdb.set_trace()
             ldist = self._query_alternatenames(name, min_popln)
+            ## For examples like new york city's times square
+            if ldist == [] and "'" in name:
+                ldist = self._query_alternatenames(name.split("'", 1)[0])
+
         return ldist
 
     def _querycountry(self, name):
@@ -77,7 +81,7 @@ class GeoNames(BaseGazetteer):
         Check if name is a country name
         """
         return self.db.query(u"""SELECT *, 'country' as 'ltype'
-                             FROM allcountries WHERE country='{0}'""".format(name))
+                             FROM allcountries WHERE country="{0}" """.format(name))
 
     def _querystate(self, name):
         """
@@ -85,7 +89,7 @@ class GeoNames(BaseGazetteer):
         """
         stmt = u"""SELECT a.geonameid, a.name as 'admin1', b.country as 'country',
                    'admin' as 'ltype' FROM
-                alladmins as a, allcountries as b WHERE (name='{0}' or asciiname='{0}')
+                alladmins as a, allcountries as b WHERE (name="{0}" or asciiname="{0}")
                 and substr(a.key, 0, 3)=b.ISO""".format(name)
         return self.db.query(stmt)
 
@@ -98,7 +102,7 @@ class GeoNames(BaseGazetteer):
                b.name as 'admin1', 'city' as 'ltype',
                a.featureCode, a.cc2 as 'countryCode'
                FROM allcities a, alladmins b, allcountries c WHERE
-               (a.name='{0}' or a.asciiname='{0}') and a.population >= {1}
+               (a.name="{0}" or a.asciiname="{0}") and a.population >= {1}
                and a.countryCode=c.ISO and a.countryCode||'.'||a.admin1 = b.key""".format(name, min_popln)
         res = self.db.query(stmt)
         if res:
@@ -121,7 +125,7 @@ class GeoNames(BaseGazetteer):
                 'city' as 'ltype', a.latitude, a.longitude, c.country as country, b.name as admin1
                 FROM alternatenames as d,
                 allcities as a, alladmins as b,
-                allcountries as c WHERE a.id=d.geonameId and alternatename='{0}'
+                allcountries as c WHERE a.id=d.geonameId and alternatename="{0}"
                 and a.countryCode=c.ISO and a.countryCode||'.'||a.admin1 = b.key and
                 a.population >= {1}""".format(name, min_popln)
         res = self.db.query(stmt)

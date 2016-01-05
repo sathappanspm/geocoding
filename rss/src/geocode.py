@@ -15,7 +15,10 @@ import ipdb
 from collections import defaultdict
 from urlparse import urlparse
 from geoutils import LocationDistribution
+import logging
 
+logging.basicConfig(filename='geocode.log',level=logging.DEBUG)
+log = logging.getLogger("rssgeocoder")
 
 class BaseGeo(object):
     def __init__(self, min_popln=0):
@@ -40,7 +43,10 @@ class BaseGeo(object):
                 locTexts.append((urlsubject, 15000))
 
         for l in locTexts:
-            results[l[0]] = LocationDistribution(self.gazetteer.query(l[0], min_popln=l[1]))
+            try:
+                results[l[0]] = LocationDistribution(self.gazetteer.query(l[0], min_popln=l[1]))
+            except:
+                log.exception("Unable to make query for string - {}".format(l[0]))
 
         scores = self.score(results)
         custom_max = lambda x: max(x.viewvalues(),
@@ -50,7 +56,21 @@ class BaseGeo(object):
         #if len(lmap) > 5:
             #ipdb.set_trace()
         #return lmap, max(scores, key=lambda x: scores[x]) if scores else "//"
-        return lmap, scores, max(lmap.values(), key=lambda x: x['score'])['geo_point'] if scores else "//"
+        return lmap, max(lmap.values(), key=lambda x: x['score'])['geo_point'] if scores else {}
+
+    def annotate(self, doc):
+        """
+        Attach embersGeoCode to document
+        """
+        try:
+            lmap, gp = self.geocode(doc)
+        except:
+            log.debug("unable to geocode")
+            lmap, gp = {}, {}
+
+        doc['embersGeoCode'] = gp
+        doc["location_distribution"] = lmap
+        return doc
 
     def score(self, results):
         scoresheet = defaultdict(float)
@@ -225,3 +245,40 @@ class TextGeo(object):
                       if "/".join([gp.country, gp.admin1, ""]) == sel_admin1]
             ns[l] = t_cand
         return ns
+
+
+if __name__ == "__main__":
+    import sys
+    import argparse
+    import json
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cat", "-c", action='store_true', default=False, help="read from stdin")
+    parser.add_argument("-i", "--infile", type=str, help="input file")
+    parser.add_argument("-o", "--outfile", type=str, help="output file")
+    args = parser.parse_args()
+    geo = BaseGeo()
+    if args.cat:
+        infile = sys.stdin
+        outfile = sys.stdout
+    else:
+        infile = open(args.infile)
+        outfile = open(args.outfile, "w")
+
+    lno = 0
+    for l in infile:
+        try:
+            j = json.loads(l)
+        except:
+            log.exception("Unable to readline")
+            continue
+
+        j = geo.annotate(j)
+        log.debug("geocoded line no:{}".format(lno))
+        lno += 1
+        outfile.write(json.dumps(j, ensure_ascii=False).encode("utf-8") + "\n")
+
+    if not args.cat:
+        infile.close()
+        outfile.close()
+
+    exit(0)
