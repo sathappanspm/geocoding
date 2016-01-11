@@ -43,7 +43,7 @@ with open("./gsrfiltered.txt") as infile:
     cnt = 0
     tcnt = 0
     #bg = TextGeo(min_popln = 0)
-    bg = BaseGeo(min_popln = 0)
+    bg = BaseGeo(min_popln = 1000)
     err = 0
     ccnt = 0
     scnt = 0
@@ -51,36 +51,31 @@ with open("./gsrfiltered.txt") as infile:
         j = json.loads(l)
         tcnt += 1
         try:
-            lmap, scores, loc = bg.geocode(j)
-        except KeyError, e:
+            lmap, loc = bg.geocode(j)
+        except UnicodeDecodeError, e:
             print str(e)
             err += 1
             continue
+
         flag = False
         try:
             loc = "/".join([loc['country'], loc['admin1'], loc['city']])
             country = loc.split("/")[0]
-        except:
+        except Exception, e:
             country = ""
-        #print loc, j["location"]
-        if unidecode(decode(j["location"][-1].lower())) in unidecode(decode(j['content'])).lower():
-            ccnt += 1
+
         if country == j["location"][0]:
             #for l in lmap:
             if unidecode(decode(j["location"][-1]).lower()) in unidecode(decode(loc)).lower():
                 scnt += 1
                 flag = True
             cnt += 1
-        else:
 
-            for l in lmap:
-                if j["location"][-1].encode("utf-8") in lmap[l].__str__():
-                    ccnt += 1
-                    flag = True
+        for l in lmap:
+            if j["location"][-1].encode("utf-8") in lmap[l].__str__():
+                ccnt += 1
+                flag = True
 
-        #if not flag:
-            #print j["url"], loc, json.dumps(j["location"])
-        #    ipdb.set_trace()
         if tcnt % 100 == 0:
             #break
             print cnt, ccnt, scnt, tcnt

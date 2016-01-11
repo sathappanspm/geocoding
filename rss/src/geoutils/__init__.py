@@ -11,6 +11,8 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 
+import ipdb
+
 FEATURE_MAP = {"A": "region", "H": "water body",
                "L": "parks area", "R": "road", "S": "Building",
                "T": "mountain", "U": "undersea", "V": "forest",
@@ -42,32 +44,32 @@ class GeoPoint(GeoData):
     """
     Location Data Type
     """
-    def __init__(self, country="", admin1="", city="",
+    def __init__(self, country="", admin1="",
                  latitude=None, longitude=None, population=0,
                  ltype=None, **kwargs):
 
-        self.country = country or kwargs.get("countryCode", "")
+        self.country = country #or kwargs.get("countryCode", "")
         self.admin1 = admin1
-        self.city = city
         self.latitude = latitude
         self.longitude = longitude
-        self.population = population
+        if not isinstance(population, int):
+            self.population = 0
+        else:
+            self.population = population
+
         self.ltype = ltype
-        if "name" in kwargs:
-            if ltype == "admin":
-                self.admin1 = kwargs['name']
-            #    self.country, self.admin1 = kwargs['key'].split(".")
-            elif ltype == "city":
-                self.city = kwargs["name"]
+        self.city = ''
+        if ltype is None:
+            if 'featureCOde' not in kwargs:
+                ipdb.set_trace()
 
-            del(kwargs['name'])
+            if kwargs['featureCOde'] == 'ADM1':
+                self.ltype = 'admin'
 
-        #if ltype == "country" or "ISO" in kwargs:
-            #self.country = kwargs['ISO']
-            #del(kwargs['ISO'])
-
-        if 'featureClass' in kwargs:
-            self.ltype = FEATURE_MAP[kwargs['featureClass']]
+            if 'featureClass' in kwargs:
+                self.ltype = FEATURE_MAP[kwargs['featureClass']]
+                if self.ltype == 'city':
+                    self.city = kwargs['name']
 
         # set all remaining extra information in kwargs
         for arg in kwargs:
@@ -105,6 +107,8 @@ class LocationDistribution(GeoData):
                 if l.ltype != 'city':
                     pvalue = 0.5
                 else:
+                    if not hasattr(l, 'confidence'):
+                        ipdb.set_trace()
                     pvalue = l.confidence
 
                     if l.__str__() in self.city:

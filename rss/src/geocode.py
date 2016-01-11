@@ -16,6 +16,8 @@ from collections import defaultdict
 from urlparse import urlparse
 from geoutils import LocationDistribution
 import logging
+from geoutils import encode
+
 
 logging.basicConfig(filename='geocode.log',level=logging.DEBUG)
 log = logging.getLogger("rssgeocoder")
@@ -29,7 +31,7 @@ class BaseGeo(object):
         locTexts = [(l['expr'], self.min_popln) for l in doc["BasisEnrichment"]["entities"]
                     if l["neType"] == "LOCATION"]
         results = {}
-        urlinfo = urlparse(doc["url"])
+        urlinfo = urlparse(doc["url"] if doc["url"] else doc.get("link", ""))
         if urlinfo.netloc != "":
             urlsubject = urlinfo.path.split("/", 2)[1]
             urlcountry = urlinfo.netloc.rsplit(".", 1)[-1]
@@ -39,14 +41,19 @@ class BaseGeo(object):
                     urlcountry = urlcountry[0]
                     urlcountry.confidence = 1.0
                     results["url"] = LocationDistribution(urlcountry)
+                    results["url"].frequency = 1
             if len(urlsubject) < 20:
                 locTexts.append((urlsubject, 15000))
 
         for l in locTexts:
             try:
-                results[l[0]] = LocationDistribution(self.gazetteer.query(l[0], min_popln=l[1]))
+                if l[0] in results:
+                    results[l[0]].frequency += 1
+                else:
+                    results[l[0]] = LocationDistribution(self.gazetteer.query(l[0], min_popln=l[1]))
+                    results[l[0]].frequency = 1
             except:
-                log.exception("Unable to make query for string - {}".format(l[0]))
+                log.exception("Unable to make query for string - {}".format(encode(l[0])))
 
         scores = self.score(results)
         custom_max = lambda x: max(x.viewvalues(),
@@ -77,11 +84,11 @@ class BaseGeo(object):
 
         def update(l):
             for s in l.city:
-                scoresheet[s] += l.city[s]
+                scoresheet[s] += l.city[s] * l.frequency
             for s in l.admin1:
-                scoresheet[s] += l.admin1[s]
+                scoresheet[s] += l.admin1[s] * l.frequency
             for s in l.country:
-                scoresheet[s] += l.country[s]
+                scoresheet[s] += l.country[s] * l.frequency
         [update(item) for item in results.viewvalues()]
         return scoresheet
 
@@ -100,8 +107,8 @@ class BaseGeo(object):
             for s in l.realizations:
                 base_score = scores[s]
                 if l.realizations[s].ltype not in ('country', 'admin'):
-                    l_adminstr = '/'.join([l.realizations[s].country,
-                                           l.realizations[s].admin1, ''])
+                    l_adminstr = encode('/'.join([l.realizations[s].country,
+                                           l.realizations[s].admin1, '']))
 
                     base_score += scores[l_adminstr] + scores[l.realizations[s].country]
 
@@ -152,6 +159,7 @@ class TextGeo(object):
                     urlcountry = urlcountry[0]
                     urlcountry.confidence = 1.0
                     loc_results["url"] = LocationDistribution(urlcountry)
+                    loc_results["url"].frequency = 1
             if len(urlsubject) < 20:
                 locTexts.insert(0, (urlsubject, -1, -1, -1))
 
@@ -160,22 +168,25 @@ class TextGeo(object):
         scores = self.score(loc_results)
         custom_max = lambda x: max(x.realizations.viewvalues(),
                                    key=lambda x: scores[x.__str__()])
-        lmap = {l: custom_max(loc_results[l]) for l in loc_results
-                if not loc_results[l].isEmpty()}
-        if len(lmap) > 5:
-            ipdb.set_trace()
-        return lmap, max(scores, key=lambda x: scores[x]) if scores else "//"
+        lmap = {l: custom_max(loc_results[l]['geo-point']) for l in loc_results
+                if not loc_results[l]['geo-point'].isEmpty()}
+        egeo = {}
+        if scores:
+            egeo = scores[max(scores, key=lambda x: scores[x])]
+        return lmap, egeo
 
     def score(self, results):
         scoresheet = defaultdict(float)
 
-        def update(l):
+        def update(item):
+            l = item['geo-point']
+            freq = item['frequency']
             for s in l.city:
-                scoresheet[s] += l.city[s]
+                scoresheet[s] += l.city[s] * freq
             for s in l.admin1:
-                scoresheet[s] += l.admin1[s]
+                scoresheet[s] += l.admin1[s] * freq
             for s in l.country:
-                scoresheet[s] += l.country[s]
+                scoresheet[s] += l.country[s] * freq
 
         [update(item) for item in results.viewvalues()]
         return scoresheet
@@ -189,10 +200,16 @@ class TextGeo(object):
         for grp in lgroups:
             imap = {txt: query_gp(txt) for txt in grp}
             imap = self.get_geoPoints_intersection(imap)
-            gp_map.update(imap)
+            for l in imap:
+                if l in gp_map:
+                    gp_map[l]['frequency'] += 1
+                else:
+                    gp_map[l] = {'geo-point': imap[l], 'frequency': 1}
+
+            #gp_map.update(imap)
 
         for l in gp_map:
-            gp_map[l] = LocationDistribution(gp_map[l])
+            gp_map[l]['geo-point'] = LocationDistribution(gp_map[l]['geo-point'])
 
         return gp_map
 
@@ -226,7 +243,7 @@ class TextGeo(object):
             return gps
 
         selcountry = selcountry.pop()
-        filtered_gps = [set(['/'.join([l.country, l.admin1, ""])]) for name in gps
+        filtered_gps = [set([encode('/'.join([l.country, l.admin1, ""]))]) for name in gps
                         for l in gps[name] if l.country == selcountry]
 
         sel_admin1 = set.intersection(*filtered_gps)
@@ -242,7 +259,7 @@ class TextGeo(object):
                 ns[l] = t_admin
                 continue
             t_cand = [gp for gp in gps[l]
-                      if "/".join([gp.country, gp.admin1, ""]) == sel_admin1]
+                      if encode("/".join([gp.country, gp.admin1, ""])) == sel_admin1]
             ns[l] = t_cand
         return ns
 
@@ -273,7 +290,7 @@ if __name__ == "__main__":
             continue
 
         j = geo.annotate(j)
-        log.debug("geocoded line no:{}".format(lno))
+        log.debug("geocoded line no:{}, {}".format(lno, encode(j.get("link", ""))))
         lno += 1
         outfile.write(json.dumps(j, ensure_ascii=False).encode("utf-8") + "\n")
 
