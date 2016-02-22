@@ -52,7 +52,7 @@ class GeoPoint(GeoData):
         self.admin1 = admin1
         self.latitude = latitude
         self.longitude = longitude
-        if not isinstance(population, int):
+        if isinstance(population, basestring):
             self.population = 0
         else:
             self.population = population

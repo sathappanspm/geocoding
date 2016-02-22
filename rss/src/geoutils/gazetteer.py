@@ -122,7 +122,7 @@ class GeoNames(BaseGazetteer):
         stmt = u"""SELECT a.id as geonameid, a.name,
                a.population,a.latitude, a.longitude, c.country as 'country',
                b.name as 'admin1',
-               a.featureClass, a.cc2 as 'countryCode', a.featureCOde
+               a.featureClass, a.countryCode as 'countryCode', a.featureCOde
                FROM allcities a, alladmins b, allcountries c WHERE
                (a.name="{0}" or a.asciiname="{0}") and a.population >= {1}
                and a.countryCode=c.ISO and a.countryCode||'.'||a.admin1 = b.key""".format(name, min_popln)
@@ -145,12 +145,13 @@ class GeoNames(BaseGazetteer):
         """
         stmt = u"""SELECT DISTINCT a.id as geonameid, a.name, a.population,
                 a.latitude, a.longitude, c.country as country, b.name as admin1,
-                a.featureClass, a.featureCOde
+                a.featureClass, a.featureCOde, a.countryCode
                 FROM alternatenames as d,
                 allcities as a, alladmins as b,
                 allcountries as c WHERE a.id=d.geonameId and alternatename="{0}"
                 and a.countryCode=c.ISO and a.countryCode||'.'||a.admin1 = b.key and
                 a.population >= {1}""".format(name, min_popln)
+
         res = self.db.query(stmt)
         #if res:
         #    df = pd.DataFrame([i.__dict__ for i in res])
@@ -163,20 +164,45 @@ class GeoNames(BaseGazetteer):
 
         return res
 
-    def get_locInfo(self, locId):
+    def get_locInfo(self, country=None, admin=None, city=None, strict=False):
         """
         return full loc tuple of name, admin1 name, country, population,
         longitude etc.
         """
+        if city.lower() == "ciudad de mexico" or city.lower() == u"ciudad de méxico":
+            city = "mexico city"
+
+        if strict:
+            stmt = u"""SELECT a.id as geonameid, a.name,
+                   a.population,a.latitude, a.longitude, c.country as 'country',
+                   b.name as 'admin1', a.featureClass,
+                   a.featureCOde, a.countryCode as 'countryCode'
+                   FROM allcities a, alladmins b, allcountries c WHERE
+                   (a.name="{0}" or a.asciiname="{0}") and a.countryCode=c.ISO and
+                   a.countryCode||"."||a.admin1 = b.key and b.name="{1}"
+                   and c.country="{2}" ORDER BY a.population DESC""".format(city, admin, country)
+        else:
+            stmt = u"""SELECT DISTINCT a.id as geonameid, a.name, a.population,
+                    a.latitude, a.longitude, c.country as country, b.name as admin1,
+                    a.featureClass, a.featureCOde, a.countryCode
+                    FROM allcities as a, alladmins as b,
+                    allcountries as c WHERE (a.name="{0}" or a.asciiname="{0}")
+                    and a.countryCode=c.ISO and a.countryCode||"."||a.admin1 = b.key and
+                    c.country="{1}" ORDER BY a.population DESC""".format(city, country)
+
+        return self.db.query(stmt)
+
+    def get_locById(self, locId):
         stmt = u"""SELECT a.id as geonameid, a.name,
                a.population,a.latitude, a.longitude, c.country as 'country',
-               b.name as 'admin1', 'city',
-               a.featureCOde, a.cc2 as 'countryCode'
+               b.name as 'admin1',
+               a.featureCOde, a.featureClass, a.countryCode as 'countryCode'
                FROM allcities a, alladmins b, allcountries c WHERE
                a.id='{}' and a.countryCode=c.ISO and
                a.countryCode||'.'||a.admin1 = b.key""".format(locId)
 
         return self.db.query(stmt)
+
 
     def get_country(self, cc2):
         res = self.db.query("SELECT *, 'country' as 'ltype' FROM allcountries where ISO='{}'".format(cc2))
