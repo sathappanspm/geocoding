@@ -190,6 +190,21 @@ class GeoNames(BaseGazetteer):
                     and a.countryCode=c.ISO and a.countryCode||"."||a.admin1 = b.key and
                     c.country="{1}" ORDER BY a.population DESC""".format(city, country)
 
+        res = self.db.query(stmt)
+        if res == []:
+            res = self._get_locInfo_from_alternate(country=country, admin=admin, city=city)
+
+        return res
+
+    def _get_locInfo_from_alternate(self, country=None, admin=None, city=None):
+         stmt = u"""SELECT a.id as geonameid, a.name,
+               a.population,a.latitude, a.longitude, c.country as 'country',
+               b.name as 'admin1', a.featureClass,
+               a.featureCOde, a.countryCode as 'countryCode'
+               FROM alternatenames as d, allcities a, alladmins b, allcountries c WHERE
+               alternatename="{0}" and a.id=d.geonameId and a.countryCode=c.ISO and
+               a.countryCode||"."||a.admin1 = b.key and b.name="{1}"
+               and c.country="{2}" ORDER BY a.population DESC""".format(city, admin, country)
         return self.db.query(stmt)
 
     def get_locById(self, locId):
