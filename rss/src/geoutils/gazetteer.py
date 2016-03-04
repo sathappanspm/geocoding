@@ -197,7 +197,7 @@ class GeoNames(BaseGazetteer):
         return res
 
     def _get_locInfo_from_alternate(self, country=None, admin=None, city=None):
-         stmt = u"""SELECT a.id as geonameid, a.name,
+        stmt = u"""SELECT DISTINCT a.id as geonameid, a.name,
                a.population,a.latitude, a.longitude, c.country as 'country',
                b.name as 'admin1', a.featureClass,
                a.featureCOde, a.countryCode as 'countryCode'
