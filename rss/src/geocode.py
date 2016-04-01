@@ -27,23 +27,32 @@ class BaseGeo(object):
         self.gazetteer = GeoNames("./Geonames_dump.sql", "")
         self.min_popln = min_popln
 
-    def geocode(self, doc):
-        locTexts = [(l['expr'], self.min_popln) for l in doc["BasisEnrichment"]["entities"]
-                    if l["neType"] == "LOCATION"]
+    def geocode(self, doc=None, loclist=None):
         results = {}
-        urlinfo = urlparse(doc["url"] if doc["url"] else doc.get("link", ""))
-        if urlinfo.netloc != "":
-            urlsubject = urlinfo.path.split("/", 2)[1]
-            urlcountry = urlinfo.netloc.rsplit(".", 1)[-1]
-            if len(urlcountry.strip()) == 2:
-                urlcountry = self.gazetteer.get_country(urlcountry.upper())
-                if urlcountry != []:
-                    urlcountry = urlcountry[0]
-                    urlcountry.confidence = 1.0
-                    results["url"] = LocationDistribution(urlcountry)
-                    results["url"].frequency = 1
-            if len(urlsubject) < 20:
-                locTexts.append((urlsubject, 15000))
+        if doc is not None:
+            locTexts = [(l['expr'], self.min_popln) for l in doc["BasisEnrichment"]["entities"]
+                        if l["neType"] == "LOCATION"]
+            urlinfo = urlparse(doc["url"] if doc["url"] else doc.get("link", ""))
+            if urlinfo.netloc != "":
+                urlsubject = urlinfo.path.split("/", 2)[1]
+                urlcountry = urlinfo.netloc.rsplit(".", 1)[-1]
+                if len(urlcountry.strip()) == 2:
+                    urlcountry = self.gazetteer.get_country(urlcountry.upper())
+                    if urlcountry != []:
+                        urlcountry = urlcountry[0]
+                        urlcountry.confidence = 1.0
+                        results["url"] = LocationDistribution(urlcountry)
+                        results["url"].frequency = 1
+                if len(urlsubject) < 20:
+                    locTexts.append((urlsubject, 15000))
+        elif loclist is not None:
+            locTexts = [(l, self.min_popln) for l in loclist]
+
+        return self.geocode_fromList(locTexts, results)
+
+    def geocode_fromList(self, locTexts, results=None):
+        if results is None:
+            results = {}
 
         for l in locTexts:
             try:
@@ -60,9 +69,6 @@ class BaseGeo(object):
                                    key=lambda y: y['score'])
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
-        #if len(lmap) > 5:
-            #ipdb.set_trace()
-        #return lmap, max(scores, key=lambda x: scores[x]) if scores else "//"
         return lmap, max(lmap.values(), key=lambda x: x['score'])['geo_point'] if scores else {}
 
     def annotate(self, doc):
