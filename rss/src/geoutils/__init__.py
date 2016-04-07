@@ -12,6 +12,7 @@ __version__ = "0.0.1"
 
 
 import ipdb
+from loc_config import loc_default
 
 FEATURE_MAP = {"A": "region", "H": "water body",
                "L": "parks area", "R": "road", "S": "Building",
@@ -61,6 +62,7 @@ class GeoPoint(GeoData):
         self.city = ''
         if ltype is None:
             if 'featureCOde' not in kwargs:
+                print kwargs
                 ipdb.set_trace()
 
             if kwargs['featureCOde'] == 'ADM1':
@@ -108,6 +110,7 @@ class LocationDistribution(GeoData):
                     pvalue = 0.5
                 else:
                     if not hasattr(l, 'confidence'):
+                        print "no confidence"
                         ipdb.set_trace()
                     pvalue = l.confidence
 

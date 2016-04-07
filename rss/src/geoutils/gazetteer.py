@@ -14,7 +14,7 @@ from .dbManager import SQLiteWrapper
 import pandas as pd
 import ipdb
 from . import GeoPoint
-
+from . import loc_default
 
 class BaseGazetteer(object):
     """
@@ -59,6 +59,8 @@ class GeoNames(BaseGazetteer):
         #res = self.db.query(u"SELECT * FROM geonames_fullText WHERE name='{0}' OR admin1='{0}' or country='{0}'".format(name))
         #result[t] = self.score([dict(r) for r in res for i in r])
 
+        if name in loc_default:
+            name = loc_default[name]
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name)
@@ -90,7 +92,7 @@ class GeoNames(BaseGazetteer):
                 ipdb.set_trace()
             if any(df["ltype"] == "city"):
                 dfn = df[df["ltype"] == "city"]
-                dfn['confidence'] += (dfn['population']) / (2 * (dfn['population'].sum()))
+                df.loc[ df['ltype'] == 'city', 'confidence'] += (dfn['population']) / (2 * (dfn['population'].sum()))
 
             ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
 
@@ -108,11 +110,10 @@ class GeoNames(BaseGazetteer):
         Check if name is an admin name
         """
         stmt = u"""SELECT a.geonameid, a.name as 'admin1', b.country as 'country',
-                   'admin' as 'ltype', c.population, c.latitude, c.longitude,
-                   c.featureCOde, c.featureClass
-                   FROM alladmins as a, allcountries as b, allcities as c
+                   'admin' as 'ltype', 'featureCOde' as 'ADM1'
+                   FROM alladmins as a, allcountries as b
                    WHERE (a.name="{0}" or a.asciiname="{0}")
-                   and substr(a.key, 0, 3)=b.ISO and a.geonameid=c.id""".format(name)
+                   and substr(a.key, 0, 3)=b.ISO""".format(name)
         return self.db.query(stmt)
 
     def _querycity(self, name, min_popln=0):
