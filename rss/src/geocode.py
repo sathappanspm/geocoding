@@ -23,8 +23,8 @@ logging.basicConfig(filename='geocode.log',level=logging.DEBUG)
 log = logging.getLogger("rssgeocoder")
 
 class BaseGeo(object):
-    def __init__(self, min_popln=0):
-        self.gazetteer = GeoNames("./Geonames_dump.sql", "")
+    def __init__(self, dbpath="./Geonames_dump.sql", min_popln=0):
+        self.gazetteer = GeoNames(dbpath)
         self.min_popln = min_popln
 
     def geocode(self, doc=None, loclist=None):
@@ -130,12 +130,12 @@ class BaseGeo(object):
 
 
 class TextGeo(object):
-    def __init__(self, min_popln=0, coverageLength=10):
+    def __init__(self, dbpath="./Geonames_dump.sql", min_popln=0, coverageLength=10):
         """
         Description
         """
         self.coverageLength = coverageLength
-        self.gazetteer = GeoNames("./Geonames_dump.sql", "")
+        self.gazetteer = GeoNames("./Geonames_dump.sql")
         self.min_popln = min_popln
 
     def geocode(self, doc):

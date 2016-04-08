@@ -9,14 +9,14 @@
 import unicodecsv
 import sqlite3
 import sys
-from . import GeoPoint
+#from time import sleep
+#from . import GeoPoint
 
 unicodecsv.field_size_limit(sys.maxsize)
 
 __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
-
 
 class BaseDB(object):
     def __init__(self, dbpath):
@@ -62,7 +62,7 @@ class SQLiteWrapper(BaseDB):
             self.conn.commit()
 
     def create(self, csvfile, fmode='r', delimiter='\t',
-               coding='utf-8', columns=[], header=True, **kwargs):
+               coding='utf-8', columns=[], header=False, **kwargs):
         with open(csvfile, fmode) as infile:
             dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
                                                  delimiters=delimiter)
@@ -72,7 +72,7 @@ class SQLiteWrapper(BaseDB):
                     splits = infile.next().split(delimiter)
                     if not columns:
                         columns = splits
-                except:
+                except Exception:
                     pass
 
             print dialect
@@ -88,10 +88,18 @@ class SQLiteWrapper(BaseDB):
                                                                             col.strip()))
                     self.conn.commit()
 
-            self.cursor.executemany('''INSERT INTO {}
-                                    VALUES ({})'''.format(self.name,
-                                                          ','.join(['?' for c in columns])),
-                                    [tuple([i[c] for c in columns]) for i in reader])
+            columnstr = ','.join(['?' for c in columns])
+            rd_tuples = []
+            cnt = 0
+            for i in reader:
+                rd_tuples.append([i[c] for c in columns])
+                if cnt % 1000000:
+                    self.cursor.executemany('''INSERT INTO {}
+                                            VALUES ({})'''.format(self.name, columnstr),
+                                            rd_tuples)
+                    self.conn.commit()
+                    rd_tuples = []
+                cnt += 1
 
             self.conn.commit()
 
@@ -122,6 +130,8 @@ def main(args):
         sql.drop(dbname)
     sql.create(infile, mode=fmode, columns=columns,
                delimiter=separator, coding=coding, index=index)
+
+    sql.close()
 
 
 if __name__ == "__main__":

@@ -62,10 +62,11 @@ class GeoPoint(GeoData):
         self.city = ''
         if ltype is None:
             if 'featureCOde' not in kwargs:
-                print kwargs
-                ipdb.set_trace()
+                #print kwargs
+                pass
+                #ipdb.set_trace()
 
-            if kwargs['featureCOde'] == 'ADM1':
+            if kwargs.get('featureCOde', "") == 'ADM1':
                 self.ltype = 'admin'
 
             if 'featureClass' in kwargs:
