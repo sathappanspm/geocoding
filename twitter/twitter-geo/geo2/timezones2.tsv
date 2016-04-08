@@ -1,0 +1,293 @@
+timezone	countryCode
+America/Argentina/Buenos_Aires	AR
+America/Buenos_Aires	AR
+America/Cordoba	AR
+Buenos Aires	AR
+America/Araguaina	BR
+America/Bahia	BR
+America/Belem	BR
+America/Fortaleza	BR
+America/Manaus	BR
+America/Sao_Paulo	BR
+Brasilia	BR
+America/Santiago	CL
+Santiago	CL
+America/Bogota	CO
+Bogota	CO
+Quito	EC
+America/Bahia_Banderas	MX
+America/Chihuahua	MX
+America/Mexico_City	MX
+America/Tijuana	MX
+Chihuahua	MX
+Guadalajara	MX
+Mexico City	MX
+Monterrey	MX
+Tijuana	MX
+America/Asuncion	PY
+America/El_Salvador	SV
+America/Montevideo	UY
+America/Caracas	VE
+Caracas	VE
+Abu Dhabi	AE
+Adelaide	AU
+Africa/Algiers	DZ
+Africa/Brazzaville	CG
+Africa/Cairo	EG
+Africa/Khartoum	SD
+Africa/Lagos	NG
+Africa/Lome	TG
+Africa/Nairobi	KE
+Alaska	US
+Almaty	KZ
+America/Anchorage	US
+America/Anguilla	AI
+America/Atikokan	CA
+America/Barbados	BB
+America/Boise	US
+America/Chicago	US
+America/Costa_Rica	CR
+America/Dawson	CA
+America/Denver	US
+America/Detroit	US
+America/Edmonton	CA
+America/Guatemala	GT
+America/Halifax	CA
+America/Jamaica	JM
+America/La_Paz	BO
+America/Los_Angeles	US
+America/Managua	NI
+America/New_York	US
+America/Phoenix	US
+America/Port_of_Spain	TT
+America/Puerto_Rico	PR
+America/Regina	CA
+America/Resolute	CA
+America/St_Vincent	VC
+America/Toronto	CA
+America/Vancouver	CA
+America/Winnipeg	CA
+Amsterdam	NL
+Antarctica/Casey	AQ
+Arizona	US
+ART	AR
+Asia/Amman	JO
+Asia/Bahrain	BH
+Asia/Bangkok	TH
+Asia/Calcutta	IN
+Asia/Dili	TL
+Asia/Dubai	AE
+Asia/Hong_Kong	HK
+Asia/Jakarta	ID
+Asia/Jerusalem	IL
+Asia/Kabul	AF
+Asia/Karachi	PK
+Asia/Kolkata	IN
+Asia/Kuala_Lumpur	MY
+Asia/Kuwait	KW
+Asia/Makassar	ID
+Asia/Manila	PH
+Asia/Muscat	OM
+Asia/Riyadh	SA
+Asia/Seoul	KR
+Asia/Shanghai	CN
+Asia/Taipei	TW
+Asia/Tokyo	JP
+Asia/Yekaterinburg	RU
+AST	
+Astana	KZ
+Athens	EG
+Atlantic Time (Canada)	CA
+Auckland	NZ
+Australia/Brisbane	AU
+Australia/Lord_Howe	AU
+Australia/Sydney	AU
+Azores	PT
+Baghdad	IQ
+Baku	AZ
+Bangkok	TH
+Beijing	CN
+Belgrade	RS
+Berlin	DE
+Bern	CH
+Bratislava	SK
+Brisbane	AU
+Brussels	BE
+Bucharest	RO
+Budapest	HU
+Cairo	EG
+Canberra	AU
+Cape Verde Is.	CV
+Casablanca	MA
+Central America	
+Central Time (US & Canada)	
+CET	
+Chennai	IN
+Chongqing	CN
+Copenhagen	DK
+CST	
+Darwin	AU
+Dhaka	BD
+Dublin	IE
+Eastern Time (US & Canada)	
+Edinburgh	GB
+EET	
+Ekaterinburg	RU
+EST	
+Europe/Amsterdam	NL
+Europe/Andorra	AD
+Europe/Athens	GR
+Europe/Belfast	GB
+Europe/Belfast.	GB
+Europe/Belgrade	RS
+Europe/Berlin	DE
+Europe/Bucharest	RO
+Europe/Dublin	IE
+Europe/Istanbul	TR
+Europe/Kiev	UA
+Europe/London	GB
+Europe/Luxembourg	LU
+Europe/Madrid	ES
+Europe/Minsk	BY
+Europe/Moscow	RU
+Europe/Oslo	NO
+Europe/Paris	FR
+Europe/Rome	IT
+Europe/Sarajevo	BA
+Europe/Stockholm	SE
+Europe/Zurich	CH
+Fiji	FJ
+Georgetown	US
+GMT	
+Greenland	GL
+Guam	US
+Hanoi	VN
+Harare	ZW
+Hawaii	US
+Helsinki	FI
+Hobart	AU
+Hong Kong	CN
+HST	
+Indiana (East)	US
+Indian/Maldives	MV
+International Date Line West	
+Irkutsk	RU
+Islamabad	PK
+IST	
+Istanbul	TR
+Jakarta	ID
+Jerusalem	IL
+JST	
+Kabul	AF
+Kamchatka	RU
+Karachi	PK
+Kathmandu	NP
+Kolkata	IN
+Krasnoyarsk	RU
+Kuala Lumpur	MU
+Kuwait	KW
+Kyiv	UA
+La Paz	BO
+Lima	PE
+Lisbon	PT
+Ljubljana	SI
+London	GB
+Madrid	ES
+Magadan	RU
+Marshall Is.	
+Mazatlan	MX
+Melbourne	AU
+Mid-Atlantic	US
+Midway Island	
+Minsk	BY
+Monrovia	LR
+Moscow	RU
+Mountain Time (US & Canada)	
+MST	US
+Mumbai	IN
+Muscat	OM
+Nairobi	KE
+New Caledonia	FR
+New Delhi	IN
+Newfoundland	CA
+Novosibirsk	RU
+Nuku'alofa	TO
+Osaka	JP
+Pacific/Auckland	NZ
+Pacific/Honolulu	US
+Pacific Time (US & Canada)	
+Paris	FR
+Perth	AU
+Port Moresby	PG
+Prague	CZ
+Pretoria	ZA
+PST	
+Rangoon	MM
+Riga	LV
+Riyadh	SA
+Rome	IT
+Samoa	NZ
+Sapporo	JP
+Sarajevo	BA
+Saskatchewan	CA
+Seoul	KR
+Singapore	SG
+Skopje	MK
+Sofia	BG
+Solomon Is.	
+Sri Jayawardenepura	LK
+Stockholm	SE
+St. Petersburg	RU
+Sydney	AU
+Taipei	TH
+Tallinn	EW
+Tashkent	UZ
+Tbilisi	GE
+Tehran	IR
+Tokyo	JP
+Ulaan Bataar	MN
+Urumqi	CN
+UTC	
+Vienna	AT
+Vilnius	LT
+Vladivostok	RU
+Volgograd	RU
+Warsaw	PL
+Wellington	NZ
+West Central Africa	
+Yakutsk	RU
+Yerevan	AM
+Zagreb	HR
+Europe/Copenhagen	DK
+Indian/Antananarivo	MG
+Australia/Perth	AU
+BST	GB
+Asia/Jayapura	ID
+America/Noronha	BR
+Asia/Beirut	LB
+America/Campo_Grande	BR
+Europe/Podgorica	ME
+Asia/Baghdad	IQ
+Canada/Mountain	CA
+Atlantic/Bermuda	BM
+America/Guayaquil	EC
+America/Hermosillo	MX
+Asia/Almaty	KZ
+Asia/Irkutsk	RU
+Asia/Katmandu	NP
+Asia/Singapore	SG
+Asia/Tashkent	UZ
+CDT	US
+EDT	US
+Europe/Brussels	BE
+Europe/Kaliningrad	RU
+Europe/Volgograd	RU
+Europe/Warsaw	PL
+GMT+3	
+GMT-5	EC,CO,PE,PA,RH,JM
+GMT+5	Asia
+GMT+8	Asia
+GMT+9	Asia
+Kiev	UA
+MDT	US
+PDT	US
