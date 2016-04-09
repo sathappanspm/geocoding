@@ -9,14 +9,15 @@
 import unicodecsv
 import sqlite3
 import sys
-#from time import sleep
-#from . import GeoPoint
+# from time import sleep
+from . import GeoPoint
 
 unicodecsv.field_size_limit(sys.maxsize)
 
 __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
+
 
 class BaseDB(object):
     def __init__(self, dbpath):
@@ -46,10 +47,10 @@ class SQLiteWrapper(BaseDB):
 
     def _create(self, csvPath, columns, delimiter="\t", coding='utf-8', **kwargs):
         with open(csvPath, "rU") as infile:
-            dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
-                                                 delimiters=delimiter)
+ #           dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
+                                                 #delimiters=delimiter)
             infile.seek(0)
-            reader = unicodecsv.DictReader(infile, dialect=dialect,
+            reader = unicodecsv.DictReader(infile, dialect='excel',
                                            fieldnames=columns, encoding=coding)
             items = [r for r in reader]
             self.cursor.execute('''CREATE TABLE WorldGazetteer (id float,
@@ -64,8 +65,8 @@ class SQLiteWrapper(BaseDB):
     def create(self, csvfile, fmode='r', delimiter='\t',
                coding='utf-8', columns=[], header=False, **kwargs):
         with open(csvfile, fmode) as infile:
-            dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
-                                                 delimiters=delimiter)
+ #           dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
+ #                                                delimiters=delimiter)
             infile.seek(0)
             if header:
                 try:
@@ -75,32 +76,24 @@ class SQLiteWrapper(BaseDB):
                 except Exception:
                     pass
 
-            print dialect
-            reader = unicodecsv.DictReader(infile, dialect=dialect,
+            reader = unicodecsv.DictReader(infile, dialect='excel',
                                            fieldnames=columns, encoding=coding)
-            self.cursor.execute(''' CREATE TABLE {} ({})'''.format(self.name,
-                                                                   ','.join(columns)))
+            self.cursor.execute(''' CREATE TABLE IF NOT EXISTS {} ({})'''.format(self.name,
+                                                                                 ','.join(columns)))
+
+            columnstr = ','.join(['?' for c in columns])
+
+            self.cursor.executemany('''INSERT INTO {}
+                                    VALUES ({})'''.format(self.name, columnstr),
+                                    (tuple([c[i] for i in columns]) for c in reader))
+            self.conn.commit()
             if 'index' in kwargs:
                 for i in kwargs['index']:
                     col, iname = i.split()
-                    self.cursor.execute('CREATE INDEX {} ON {} ({})'.format(iname.strip(),
-                                                                            self.name,
-                                                                            col.strip()))
+                    self.cursor.execute('CREATE INDEX IF NOT EXISTS {} ON {} ({})'.format(iname.strip(),
+                                                                                          self.name,
+                                                                                          col.strip()))
                     self.conn.commit()
-
-            columnstr = ','.join(['?' for c in columns])
-            rd_tuples = []
-            cnt = 0
-            for i in reader:
-                rd_tuples.append([i[c] for c in columns])
-                if cnt % 1000000:
-                    self.cursor.executemany('''INSERT INTO {}
-                                            VALUES ({})'''.format(self.name, columnstr),
-                                            rd_tuples)
-                    self.conn.commit()
-                    rd_tuples = []
-                cnt += 1
-
             self.conn.commit()
 
     def close(self):
@@ -125,7 +118,7 @@ def main(args):
     dbname = args.name
     infile = args.file
     index = config['index']
-    sql = SQLiteWrapper(dbpath="./Geonames_dump.sql", dbname=dbname)
+    sql = SQLiteWrapper(dbpath="./GN_dump_20160407.sql", dbname=dbname)
     if args.overwrite:
         sql.drop(dbname)
     sql.create(infile, mode=fmode, columns=columns,
