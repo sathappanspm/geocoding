@@ -11,7 +11,6 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 from geoutils.gazetteer import GeoNames
-import ipdb
 from collections import defaultdict
 from urlparse import urlparse
 from geoutils import LocationDistribution
@@ -30,7 +29,7 @@ class BaseGeo(object):
     def geocode(self, doc=None, loclist=None):
         results = {}
         if doc is not None:
-            locTexts = [(l['expr'], self.min_popln) for l in doc["BasisEnrichment"]["entities"]
+            locTexts = [(l['expr'].lower(), self.min_popln) for l in doc["BasisEnrichment"]["entities"]
                         if l["neType"] == "LOCATION"]
             urlinfo = urlparse(doc["url"] if doc["url"] else doc.get("link", ""))
             if urlinfo.netloc != "":
@@ -44,9 +43,9 @@ class BaseGeo(object):
                         results["url"] = LocationDistribution(urlcountry)
                         results["url"].frequency = 1
                 if len(urlsubject) < 20:
-                    locTexts.append((urlsubject, 15000))
+                    locTexts.append((urlsubject.lower(), 15000))
         elif loclist is not None:
-            locTexts = [(l, self.min_popln) for l in loclist]
+            locTexts = [(l.lower(), self.min_popln) for l in loclist]
 
         return self.geocode_fromList(locTexts, results)
 
@@ -274,8 +273,10 @@ if __name__ == "__main__":
     import sys
     import argparse
     import json
+    from geoutils import smart_open
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cat", "-c", action='store_true', default=False, help="read from stdin")
+    parser.add_argument("--cat", "-c", action='store_true',
+                        default=False, help="read from stdin")
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
@@ -284,21 +285,21 @@ if __name__ == "__main__":
         infile = sys.stdin
         outfile = sys.stdout
     else:
-        infile = open(args.infile)
-        outfile = open(args.outfile, "w")
+        infile = smart_open(args.infile)
+        outfile = smart_open(args.outfile, "wb")
 
     lno = 0
     for l in infile:
         try:
             j = json.loads(l)
+            j = geo.annotate(j)
+            #log.debug("geocoded line no:{}, {}".format(lno,
+            #                                           encode(j.get("link", ""))))
+            #lno += 1
+            outfile.write(encode(json.dumps(j, ensure_ascii=False)) + "\n")
         except:
             log.exception("Unable to readline")
             continue
-
-        j = geo.annotate(j)
-        log.debug("geocoded line no:{}, {}".format(lno, encode(j.get("link", ""))))
-        lno += 1
-        outfile.write(json.dumps(j, ensure_ascii=False).encode("utf-8") + "\n")
 
     if not args.cat:
         infile.close()
