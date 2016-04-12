@@ -76,16 +76,18 @@ class SQLiteWrapper(BaseDB):
                 except Exception:
                     pass
 
-            reader = unicodecsv.DictReader(infile, dialect='excel',
-                                           fieldnames=columns, encoding=coding)
+            #reader = unicodecsv.DictReader(infile, dialect='excel',
+            #                               fieldnames=columns, encoding=coding)
             self.cursor.execute(''' CREATE TABLE IF NOT EXISTS {} ({})'''.format(self.name,
                                                                                  ','.join(columns)))
 
+            reader = infile
             columnstr = ','.join(['?' for c in columns])
 
             self.cursor.executemany('''INSERT INTO {}
                                     VALUES ({})'''.format(self.name, columnstr),
-                                    (tuple([c[i] for i in columns]) for c in reader))
+                                    (tuple([i for i in c.decode("utf-8").split("\t")]) for c in reader))
+                                    #(tuple([c[i] for i in columns]) for c in reader))
             self.conn.commit()
             if 'index' in kwargs:
                 for i in kwargs['index']:
