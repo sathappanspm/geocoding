@@ -11,8 +11,9 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 
-import ipdb
+#import ipdb
 from loc_config import loc_default
+import os
 
 FEATURE_MAP = {"A": "region", "H": "water body",
                "L": "parks area", "R": "road", "S": "Building",

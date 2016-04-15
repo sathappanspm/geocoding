@@ -12,7 +12,7 @@ __version__ = "0.0.1"
 
 from .dbManager import SQLiteWrapper
 import pandas as pd
-import ipdb
+#import ipdb
 from . import GeoPoint
 from . import loc_default
 
@@ -111,7 +111,7 @@ class GeoNames(BaseGazetteer):
         """
         stmt = u"""SELECT a.geonameid, a.name as 'admin1', b.country as 'country',
                    'admin' as 'ltype', 'featureCOde' as 'ADM1'
-                   FROM alladmins as a INNER JOIN allcountries as b on
+                   FROM allcountries as b INNER JOIN alladmins as a on
                    substr(a.key, 0, 3)=b.ISO
                    WHERE (a.name="{0}" or a.asciiname="{0}")
                    """.format(name)
@@ -125,9 +125,9 @@ class GeoNames(BaseGazetteer):
                a.population,a.latitude, a.longitude, c.country as 'country',
                b.name as 'admin1',
                a.featureClass, a.countryCode as 'countryCode', a.featureCOde
-               FROM allcities a
-               INNER JOIN alladmins b ON a.countryCode||'.'||a.admin1 = b.key
-               INNER JOIN allcountries c ON a.countryCode=c.ISO
+               FROM allcountries as c
+               INNER JOIN allcities as a ON a.countryCode=c.ISO
+               INNER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                WHERE
                (a.name="{0}" or a.asciiname="{0}") and a.population >= {1}
                """.format(name, min_popln)
@@ -153,8 +153,8 @@ class GeoNames(BaseGazetteer):
                 a.featureClass, a.featureCOde, a.countryCode
                 FROM alternatenames as d
                 INNER JOIN allcities as a ON a.id=d.geonameId
-                INNER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                 INNER JOIN allcountries as c ON a.countryCode=c.ISO
+                INNER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                 WHERE alternatename="{0}" and
                 a.population >= {1}""".format(name, min_popln)
 

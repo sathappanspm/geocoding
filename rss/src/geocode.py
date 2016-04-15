@@ -31,7 +31,7 @@ class BaseGeo(object):
         if doc is not None:
             locTexts = [(l['expr'].lower(), self.min_popln) for l in doc["BasisEnrichment"]["entities"]
                         if l["neType"] == "LOCATION"]
-            urlinfo = urlparse(doc["url"] if doc["url"] else doc.get("link", ""))
+            urlinfo = urlparse(doc["url"] if doc.get("url", "") else doc.get("link", ""))
             if urlinfo.netloc != "":
                 urlsubject = urlinfo.path.split("/", 2)[1]
                 urlcountry = urlinfo.netloc.rsplit(".", 1)[-1]
@@ -76,8 +76,8 @@ class BaseGeo(object):
         """
         try:
             lmap, gp = self.geocode(doc)
-        except:
-            log.debug("unable to geocode")
+        except Exception, e:
+            log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
 
         doc['embersGeoCode'] = gp
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
-    geo = BaseGeo()
+    geo = BaseGeo(dbpath="./geoutils/GN_dump_20160407.sql")
     if args.cat:
         infile = sys.stdin
         outfile = sys.stdout
