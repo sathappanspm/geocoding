@@ -31,8 +31,8 @@ class SQLiteWrapper(BaseDB):
     def __init__(self, dbpath, dbname="WorldGazetteer"):
         self.conn = sqlite3.connect(dbpath)
         self.conn.execute('PRAGMA synchronous = OFF')
-        self.conn.execute('PRAGMA journal_mode = WAL')
-        self.conn.execute("PRAGMA cache_size=2000000")
+        self.conn.execute('PRAGMA journal_mode = OFF')
+        self.conn.execute("PRAGMA cache_size=5000000")
 
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
@@ -45,6 +45,7 @@ class SQLiteWrapper(BaseDB):
     def insert(self, msg, dup_id):
         return
 
+    #outdated function
     def _create(self, csvPath, columns, delimiter="\t", coding='utf-8', **kwargs):
         with open(csvPath, "rU") as infile:
  #           dialect = unicodecsv.Sniffer().sniff(infile.read(10240),

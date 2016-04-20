@@ -12,9 +12,10 @@ __version__ = "0.0.1"
 
 from .dbManager import SQLiteWrapper
 import pandas as pd
-#import ipdb
 from . import GeoPoint
 from . import loc_default
+from . import isempty
+
 
 class BaseGazetteer(object):
     """
@@ -31,12 +32,8 @@ class BaseGazetteer(object):
 
 
 class GeoNames(BaseGazetteer):
-    def __init__(self, dbpath, tables=None, priority=None):
+    def __init__(self, dbpath, priority=None):
         self.db = SQLiteWrapper(dbpath)
-        if tables is None:
-            self.tables = ('allCities', 'allAdmins', 'allCountries')
-        else:
-            self.tables = tables
 
         if priority is None:
             # TODO: Define default priority
@@ -55,25 +52,18 @@ class GeoNames(BaseGazetteer):
         return:
         list of possible locations the input string refers to
         """
-        #res = self.db.query(u"SELECT * FROM geonames_fullText WHERE name='{0}' OR admin1='{0}' or country='{0}'".format(name))
-        #result[t] = self.score([dict(r) for r in res for i in r])
-
         if name in loc_default:
             name = loc_default[name]
+
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name)
             city = self._querycity(name, min_popln=min_popln)
             alternateNames = self._query_alternatenames(name, min_popln)
         else:
-            admin = []
-            city = []
-            alternateNames = []
-        #res = self.score(city, admin, country)
+            admin, city, alternateNames = [], [], []
+
         ldist = (city + country + admin + alternateNames)
-        #if city == [] and country == [] and admin == []:
-            #ipdb.set_trace()
-            ## For examples like new york city's times square
         if ldist == [] and "'" in name:
             ldist = self._query_alternatenames(name.split("'", 1)[0])
 
@@ -87,11 +77,13 @@ class GeoNames(BaseGazetteer):
 
             try:
                 df['population'] = (df['population'] + 1).astype(float)
-            except:
-                ipdb.set_trace()
-            if any(df["ltype"] == "city"):
-                dfn = df[df["ltype"] == "city"]
-                df.loc[ df['ltype'] == 'city', 'confidence'] += (dfn['population']) / (2 * (dfn['population'].sum()))
+            except Exception, e:
+                raise e
+
+            dfn = df[df["ltype"] == "city"]
+            if not dfn.empty:
+                df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
+                                                                 (2 * (dfn['population'].sum())))
 
             ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
 
@@ -102,7 +94,9 @@ class GeoNames(BaseGazetteer):
         Check if name is a country name
         """
         return self.db.query(u"""SELECT *, 'country' as 'ltype'
-                             FROM allcountries as a INNER JOIN alternatenames as b on a.geonameid=b.geonameid WHERE
+                             FROM allcountries as a
+                             INNER JOIN alternatenames as b ON a.geonameid=b.geonameid
+                             WHERE
                              (country="{0}" OR b.alternatename="{0}") LIMIT 1""".format(name))
 
     def _querystate(self, name):
@@ -127,21 +121,11 @@ class GeoNames(BaseGazetteer):
                a.featureClass, a.countryCode as 'countryCode', a.featureCOde
                FROM allcountries as c
                INNER JOIN allcities as a ON a.countryCode=c.ISO
-               INNER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
+               LEFT OUTER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                WHERE
                (a.name="{0}" or a.asciiname="{0}") and a.population >= {1}
                """.format(name, min_popln)
         res = self.db.query(stmt)
-        #if res:
-        #    df = pd.DataFrame([i.__dict__ for i in res])
-        #    if any(df["ltype"] == "city") and any(df["ltype"] != "city"):
-        #        df = df[df["ltype"] == "city"]
-
-        #    df['population'] = (df['population'] + 1).astype(float)
-        #    df['confidence'] = (df['population']) / (2 * (df['population'].sum())) + 0.5
-
-        #    res = [GeoPoint(**d) for d in df.to_dict(orient='records')]
-
         return res
 
     def _query_alternatenames(self, name, min_popln=0):
@@ -154,20 +138,11 @@ class GeoNames(BaseGazetteer):
                 FROM alternatenames as d
                 INNER JOIN allcities as a ON a.id=d.geonameId
                 INNER JOIN allcountries as c ON a.countryCode=c.ISO
-                INNER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
+                LEFT OUTER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                 WHERE alternatename="{0}" and
                 a.population >= {1}""".format(name, min_popln)
 
         res = self.db.query(stmt)
-        #if res:
-        #    df = pd.DataFrame([i.__dict__ for i in res])
-        #    #if any(df["ltype"] == "city"):
-        #    #    df = df[df["ltype"] == "city"]
-        #    df['population'] = (df['population'] + 1).astype(float)
-        #    df['confidence'] = (df['population']) / (2 * (df['population'].sum())) + 0.5
-
-        #    res = [GeoPoint(**d) for d in df.to_dict(orient='records')]
-
         return res
 
     def get_locInfo(self, country=None, admin=None, city=None, strict=False):
@@ -175,31 +150,33 @@ class GeoNames(BaseGazetteer):
         return full loc tuple of name, admin1 name, country, population,
         longitude etc.
         """
-        if city and city.lower() == "ciudad de mexico" or city.lower() == u"ciudad de méxico":
+        if city and (city.lower() == "ciudad de mexico" or city.lower() == u"ciudad de méxico"):
             city = "mexico city"
 
-        if strict:
-            stmt = u"""SELECT a.id as geonameid, a.name,
-                   a.population,a.latitude, a.longitude, c.country as 'country',
-                   b.name as 'admin1', a.featureClass,
-                   a.featureCOde, a.countryCode as 'countryCode'
-                   FROM allcities a
-                   INNER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
-                   INNER JOIN allcountries c ON a.countryCode=c.ISO
-                   WHERE
-                   (a.name="{0}" or a.asciiname="{0}") and
-                   b.name="{1}"
-                   and c.country="{2}" ORDER BY a.population DESC""".format(city, admin, country)
+        stmt = u"""SELECT a.id as geonameid, a.name,
+               a.population,a.latitude, a.longitude, c.country as 'country',
+               b.name as 'admin1', a.featureClass,
+               a.featureCOde, a.countryCode as 'countryCode'
+               FROM allcities a
+               LEFT OUTER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
+               INNER JOIN allcountries c ON a.countryCode=c.ISO
+               WHERE """
+
+        if isempty(city) and isempty(admin):
+            stmt += u"""c.country="{1}" ORDER BY a.population DESC LIMIT 1""".format(country)
+
+        elif isempty(city):
+            stmt += u""" (b.name="{0}" or b.asciiname="{0}")
+                    and c.country="{1}" ORDER BY a.population DESC LIMIT 1""".format(admin, country)
         else:
-            stmt = u"""SELECT DISTINCT a.id as geonameid, a.name, a.population,
-                    a.latitude, a.longitude, c.country as country, b.name as admin1,
-                    a.featureClass, a.featureCOde, a.countryCode
-                    FROM allcities as a
-                    INNER JOIN alladmins as b ON a.countryCode||"."||a.admin1 = b.key
-                    INNER JOIN allcountries as c ON a.countryCode=c.ISO
-                    WHERE (a.name="{0}" or a.asciiname="{0}")
-                    and
-                    c.country="{1}" ORDER BY a.population DESC""".format(city, country)
+            if strict:
+                stmt += u""" (a.name="{0}" or a.asciiname="{0}") and
+                             (b.name="{1}" or b.asciiname="{1}") and
+                             c.country="{2}" ORDER BY a.population DESC""".format(city, admin,
+                                                                                  country)
+            else:
+                stmt += u""" (a.name="{0}" or a.asciiname="{0}") and
+                             c.country="{1}" ORDER BY a.population DESC""".format(city, country)
 
         res = self.db.query(stmt)
         if res == []:
@@ -214,12 +191,21 @@ class GeoNames(BaseGazetteer):
                a.featureCOde, a.countryCode as 'countryCode'
                FROM alternatenames as d
                INNER JOIN allcities a ON a.id=d.geonameId
-               INNER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
+               LEFT OUTER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
                INNER JOIN allcountries c ON a.countryCode=c.ISO
-               WHERE
-               alternatename="{0}"
-               and b.name="{1}"
-               and c.country="{2}" ORDER BY a.population DESC""".format(city, admin, country)
+               WHERE """
+
+        if isempty(city) and isempty(admin):
+            stmt += u"""c.country="{0}" ORDER BY a.population DESC""".format(country)
+        elif isempty(city):
+            stmt += u"""alternatename="{0}"
+                       and a.featureCOde == "ADM1"
+                       and c.country="{1}" ORDER BY a.population DESC""".format(admin, country)
+        else:
+            stmt += u"""alternatename="{0}"
+                        and c.country="{1}" ORDER BY a.population DESC""".format(city,
+                                                                                 country)
+
         return self.db.query(stmt)
 
     def get_locById(self, locId):
@@ -236,9 +222,9 @@ class GeoNames(BaseGazetteer):
 
         return self.db.query(stmt)
 
-
     def get_country(self, cc2):
-        res = self.db.query("SELECT *, 'country' as 'ltype' FROM allcountries where ISO='{}'".format(cc2))
+        res = self.db.query("""SELECT *, 'country' as 'ltype' FROM
+                            allcountries where ISO='{}'""".format(cc2))
         for l in res:
             l.confidence = 0.50
 
