@@ -21,6 +21,15 @@ FEATURE_MAP = {"A": "region", "H": "water body",
                "P": "city"}
 
 
+def safe_convert(obj, ctype, default=None):
+    if isempty(obj):
+        return default
+    try:
+        return ctype(obj)
+    except Exception, e:
+        raise e
+
+
 def isempty(s):
     """
     return if input object(string) is empty

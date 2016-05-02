@@ -9,14 +9,24 @@
 import unicodecsv
 import sqlite3
 import sys
+import os
 # from time import sleep
-from . import GeoPoint
+from . import GeoPoint, safe_convert, isempty
+from pymongo import MongoClient
+import json
 
 unicodecsv.field_size_limit(sys.maxsize)
 
 __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
+
+
+sqltypemap = {'char': unicode,
+              'BIGINT': int,
+              'text': unicode, 'INT': int,
+              'FLOAT': float, 'varchar': unicode
+              }
 
 
 class BaseDB(object):
@@ -105,6 +115,104 @@ class SQLiteWrapper(BaseDB):
     def drop(self, tablename):
         self.cursor.execute("DROP TABLE IF EXISTS {}".format(tablename))
         self.conn.commit()
+
+
+class MongoDBWrapper(BaseDB):
+    def __init__(self, dbname, coll_name, host='localhost', port=12345):
+        self.client = MongoClient(host, port)
+        self.db = self.client[dbname]
+        self.collection = self.db[coll_name]
+
+    def query(self, stmt, items=[], limit=None):
+        if limit:
+            res = self.collection.find(stmt + {it: 1 for it in items}).limit(limit)
+        else:
+            res = self.collection.find(stmt + {it: 1 for it in items})
+
+        return [GeoPoint(**d) for d in res]
+
+    def create(self, cityCsv, admin1csv, admin2csv, countryCsv, confDir="../../data/"):
+        with open(admin1csv) as acsv:
+            with open(os.path.join(confDir, "geonames_admin1.conf")) as t:
+                columns = [l.split(" ", 1)[0] for l in json.load(t)['columns']]
+
+            admin1 = {}
+            for l in acsv:
+                row = dict(zip(columns, l.decode('utf-8').lower().split("\t")))
+                admin1[row['key']] = row
+
+        with open(countryCsv) as ccsv:
+            with open(os.path.join(confDir, "geonames_countryInfo.conf")) as t:
+                columns = [l.split(" ", 1)[0] for l in json.load(t)['columns']]
+
+            countryInfo = {}
+            for l in ccsv:
+                row = dict(zip(columns, l.lower().decode('utf-8').split("\t")))
+                countryInfo[row['ISO']] = row
+
+        with open(admin2csv) as acsv:
+            with open(os.path.join(confDir, "geonames_admin1.conf")) as t:
+                columns = [l.split(" ", 1)[0] for l in json.load(t)['columns']]
+
+            admin2 = {}
+            for l in acsv:
+                row = dict(zip(columns, l.decode('utf-8').lower().split("\t")))
+                admin2[row['key']] = row
+
+        with open(cityCsv) as ccsv:
+            with open(os.path.join(confDir, "geonames.conf")) as t:
+                conf = json.load(t)
+                columns = [l.split(" ", 1)[0] for l in conf['columns']]
+                coltypes = dict(zip(columns,
+                                    [l.split(" ", 2)[1].split("(", 1)[0] for l in conf['columns']]))
+
+            for l in ccsv:
+                row = dict(zip(columns, l.decode("utf-8").lower().split("\t")))
+
+                akey = row['countryCode'] + "." + row['admin1']
+                if row['admin1'] == "00":
+                    ad1_details = {}
+                else:
+                    try:
+                        ad1_details = admin1[akey]
+                    except:
+                        print akey
+                        ad1_details = {}
+
+                if not isempty(row['admin2']):
+                    try:
+                        ad2_details = (admin2[akey + "." + row["admin2"]])
+                    except:
+                        ad2_details = {}
+                else:
+                    ad2_details = {}
+
+                if row['countryCode'] != 'YU':
+                    try:
+                        country_name = countryInfo[row['countryCode']]
+                    except:
+                        country_name = {'country': None, 'ISO3': None, 'continent': None}
+                else:
+                    country_name = {'country': 'Yugoslavia', 'ISO3': "YUG", "continent": 'Europe'}
+
+                for c in row:
+                    row[c] = safe_convert(row[c], sqltypemap[coltypes[c]], None)
+
+                if row['alternatenames']:
+                    row['alternatenames'] = row['alternatenames'].split(",")
+
+                row['country'] = country_name['country']
+                row['continent'] = country_name['continent']
+                row['countryCode_ISO3'] = country_name['ISO3']
+                row['admin1'] = ad1_details.get('name', "")
+                row['admin1_asciiname'] = ad1_details.get('asciiname', "")
+                row['admin2'] = ad2_details.get('name', "")
+                rkeys = row.keys()
+                for c in rkeys:
+                    if isempty(row[c]):
+                        del(row[c])
+
+                self.collection.insert(row)
 
 
 def main(args):
