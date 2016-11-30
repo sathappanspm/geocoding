@@ -8,6 +8,7 @@
 
 import unicodecsv
 import sqlite3
+#import gsqlite3 as sqlite3
 import sys
 import os
 # from time import sleep
@@ -39,18 +40,24 @@ class BaseDB(object):
 
 class SQLiteWrapper(BaseDB):
     def __init__(self, dbpath, dbname="WorldGazetteer"):
+        self.dbpath = dbpath
         self.conn = sqlite3.connect(dbpath)
         self.conn.execute('PRAGMA synchronous = OFF')
         self.conn.execute('PRAGMA journal_mode = OFF')
         self.conn.execute("PRAGMA cache_size=5000000")
-
-        self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
+        self.conn.row_factory = sqlite3.Row
         self.name = dbname
 
     def query(self, stmt=None, items=[]):
+        #cursor = self.conn.cursor()
+        #cursor.row_factory = sqlite3.Row
         result = self.cursor.execute(stmt)
-        return [GeoPoint(**dict(l)) for l in result.fetchall()]
+        #result = cursor.execute(stmt)
+        result = [GeoPoint(**dict(l)) for l in result.fetchall()]
+        #result = [GeoPoint(**dict(l)) for l in result.fetchmany(1000)]
+        #conn.close()
+        return result
 
     def insert(self, msg, dup_id):
         return
@@ -208,6 +215,7 @@ class MongoDBWrapper(BaseDB):
                 row['admin1_asciiname'] = ad1_details.get('asciiname', "")
                 row['admin2'] = ad2_details.get('name', "")
                 rkeys = row.keys()
+                row['coordinates'] = [row['longitude'], row['latitude']]
                 for c in rkeys:
                     if isempty(row[c]):
                         del(row[c])

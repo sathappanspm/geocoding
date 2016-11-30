@@ -10,10 +10,11 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-from .dbManager import SQLiteWrapper
+#import gevent
+from .dbManager import SQLiteWrapper, MongoDBWrapper
 import pandas as pd
 from . import GeoPoint
-from . import loc_default
+from . import loc_default, blacklist
 from . import isempty
 
 
@@ -55,11 +56,19 @@ class GeoNames(BaseGazetteer):
         if name in loc_default:
             name = loc_default[name]
 
+        if name in blacklist:
+            return None
+
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name)
             city = self._querycity(name, min_popln=min_popln)
             alternateNames = self._query_alternatenames(name, min_popln)
+            #g1 = gevent.spawn(self._querystate, name)
+            #g2 = gevent.spawn(self._querycity, name, min_popln=min_popln)
+            #g3 = gevent.spawn(self._query_alternatenames, name, min_popln)
+            #gevent.joinall([g1, g2, g3])
+            #admin, city, alternateNames = g1.value, g2.value, g3.value
         else:
             admin, city, alternateNames = [], [], []
 
@@ -163,7 +172,7 @@ class GeoNames(BaseGazetteer):
                WHERE """
 
         if isempty(city) and isempty(admin):
-            stmt += u"""c.country="{1}" ORDER BY a.population DESC LIMIT 1""".format(country)
+            stmt += u"""c.country="{0}" ORDER BY a.population DESC LIMIT 1""".format(country)
 
         elif isempty(city):
             stmt += u""" (b.name="{0}" or b.asciiname="{0}")
@@ -229,3 +238,14 @@ class GeoNames(BaseGazetteer):
             l.confidence = 0.50
 
         return res
+
+
+class MOD_GeoNames(BaseGazetteer):
+    """
+    Geonames in single table
+    """
+    def __init__(self, dbname, collectionName):
+        self.db = MongoDBWrapper(dbname, collectionName)
+
+    def query(self, name, min_popln=0):
+        pass

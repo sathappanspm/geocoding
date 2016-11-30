@@ -22,15 +22,16 @@ logging.basicConfig(filename='geocode.log',level=logging.DEBUG)
 log = logging.getLogger("rssgeocoder")
 
 class BaseGeo(object):
-    def __init__(self, dbpath="./Geonames_dump.sql", min_popln=0):
+    def __init__(self, dbpath="./Geonames_dump.sql", min_popln=0, min_length=1):
         self.gazetteer = GeoNames(dbpath)
         self.min_popln = min_popln
+        self.min_length = min_length
 
     def geocode(self, doc=None, loclist=None):
         results = {}
         if doc is not None:
             locTexts = [(l['expr'].lower(), self.min_popln) for l in doc["BasisEnrichment"]["entities"]
-                        if l["neType"] == "LOCATION"]
+                        if ((l["neType"] == "LOCATION") and len(l['expr']) >= self.min_length)]
             urlinfo = urlparse(doc["url"] if doc.get("url", "") else doc.get("link", ""))
             if urlinfo.netloc != "":
                 urlsubject = urlinfo.path.split("/", 2)[1]
@@ -42,7 +43,7 @@ class BaseGeo(object):
                         urlcountry.confidence = 1.0
                         results["url"] = LocationDistribution(urlcountry)
                         results["url"].frequency = 1
-                if len(urlsubject) < 20:
+                if self.min_length < len(urlsubject) < 20:
                     locTexts.append((urlsubject.lower(), 15000))
         elif loclist is not None:
             locTexts = [(l.lower(), self.min_popln) for l in loclist]
@@ -75,7 +76,7 @@ class BaseGeo(object):
         Attach embersGeoCode to document
         """
         try:
-            lmap, gp = self.geocode(doc)
+            lmap, gp = self.geocode(doc=doc)
         except Exception, e:
             log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
@@ -280,7 +281,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
-    geo = BaseGeo(dbpath="./geoutils/GN_dump_20160407.sql")
+    geo = BaseGeo(dbpath="./geoutils/GN_dump_20160407.sql", min_length=3)
     if args.cat:
         infile = sys.stdin
         outfile = sys.stdout

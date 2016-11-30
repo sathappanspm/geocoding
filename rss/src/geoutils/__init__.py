@@ -13,7 +13,7 @@ __version__ = "0.0.1"
 
 import os
 import sys
-from loc_config import loc_default
+from loc_config import loc_default, blacklist
 
 FEATURE_MAP = {"A": "region", "H": "water body",
                "L": "parks area", "R": "road", "S": "Building",
