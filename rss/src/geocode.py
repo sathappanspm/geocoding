@@ -108,6 +108,7 @@ class BaseGeo(object):
                 usubj_q = self.gazetteer.query(urlsubject, 15000)
                 if usubj_q:
                     results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
+                    results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
         return results
 
     def annotate(self, doc):
