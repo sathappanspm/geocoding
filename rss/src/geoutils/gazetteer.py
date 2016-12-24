@@ -10,12 +10,15 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-#import gevent
+# import gevent
 from .dbManager import SQLiteWrapper, MongoDBWrapper
 import pandas as pd
-from . import GeoPoint
-from . import loc_default, blacklist
-from . import isempty
+from . import GeoPoint, encode, blacklist, loc_default, isempty
+# from . import loc_default, blacklist
+# from . import isempty
+import logging
+
+log = logging.getLogger("rssgeocoder")
 
 
 class BaseGazetteer(object):
@@ -46,18 +49,16 @@ class GeoNames(BaseGazetteer):
         """
         Search the locations DB for the given name
         params:
-        name - string
-        absoluteMatch - boolean. If False, pick the longest substring that returns a
-                        match
-
+            name - string
+            min_popln - integer
         return:
-        list of possible locations the input string refers to
+            list of possible locations the input string refers to
         """
         if name in loc_default:
             name = loc_default[name]
 
         if name in blacklist:
-            return None
+            return []
 
         country = self._querycountry(name)
         if country == []:
@@ -74,6 +75,7 @@ class GeoNames(BaseGazetteer):
 
         ldist = (city + country + admin + alternateNames)
         if ldist == [] and "'" in name:
+            log.info('splitting location name on quote mark-{}'.format(encode(name)))
             ldist = self._query_alternatenames(name.split("'", 1)[0])
 
         if ldist != []:
@@ -84,15 +86,16 @@ class GeoNames(BaseGazetteer):
             else:
                 df['confidence'] = 0.5
 
-            try:
-                df['population'] = (df['population'] + 1).astype(float)
-            except Exception, e:
-                raise e
+                try:
+                    df['population'] = (df['population'] + 1).astype(float)
+                except Exception, e:
+                    raise e
 
-            dfn = df[df["ltype"] == "city"]
-            if not dfn.empty:
-                df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
-                                                                 (2 * (dfn['population'].sum())))
+                #dfn = df[df["ltype"] == "city"]
+                #if not dfn.empty:
+                #    df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
+                #                                                    (2 * (dfn['population'].sum())))
+                df['confidence'] += (df['population'] / (2 * df['population'].sum()))
 
             ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
 
@@ -102,9 +105,10 @@ class GeoNames(BaseGazetteer):
         """
         Check if name is a country name
         """
-        return self.db.query(u"""SELECT *, 'country' as 'ltype'
+        return self.db.query(u"""SELECT a.*, 'country' as 'ltype', c.population
                              FROM allcountries as a
                              INNER JOIN alternatenames as b ON a.geonameid=b.geonameid
+                             INNER JOIN allcities as c ON a.geonameid=c.id
                              WHERE
                              (country=? OR b.alternatename=?) LIMIT 1""", (name, name))
 
@@ -113,9 +117,11 @@ class GeoNames(BaseGazetteer):
         Check if name is an admin name
         """
         stmt = u"""SELECT a.geonameid, a.name as 'admin1', b.country as 'country',
-                   'admin' as 'ltype', 'featureCOde' as 'ADM1'
+                   'admin1' as 'ltype', 'ADM1' as 'featureCOde', 'A' as 'featureClass',
+                   b.ISO as 'countryCode', c.population
                    FROM allcountries as b INNER JOIN alladmins as a on
                    substr(a.key, 0, 3)=b.ISO
+                   INNER JOIN allcities as c ON c.id=a.geonameid
                    WHERE (a.name=? or a.asciiname=?)
                    """
         return self.db.query(stmt, (name, name))
@@ -132,6 +138,7 @@ class GeoNames(BaseGazetteer):
                INNER JOIN allcities as a ON a.countryCode=c.ISO
                LEFT OUTER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                WHERE
+               (a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P") and
                (a.name=? or a.asciiname=?) and a.population >= ?
                """
         res = self.db.query(stmt, (name, name, min_popln))
@@ -148,7 +155,9 @@ class GeoNames(BaseGazetteer):
                 INNER JOIN allcities as a ON a.id=d.geonameId
                 INNER JOIN allcountries as c ON a.countryCode=c.ISO
                 LEFT OUTER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
-                WHERE alternatename=? and
+                WHERE
+                (a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P")
+                and alternatename=? and
                 a.population >=?"""
 
         res = self.db.query(stmt, (name, min_popln))

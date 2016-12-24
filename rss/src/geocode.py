@@ -10,6 +10,7 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
+import ipdb
 from geoutils.gazetteer import GeoNames
 from collections import defaultdict
 from urlparse import urlparse
@@ -18,8 +19,9 @@ import logging
 from geoutils import encode
 
 
-logging.basicConfig(filename='geocode.log',level=logging.DEBUG)
+logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
 log = logging.getLogger("rssgeocoder")
+
 
 class BaseGeo(object):
     def __init__(self, dbpath="./Geonames_dump.sql", min_popln=0, min_length=1):
@@ -28,48 +30,85 @@ class BaseGeo(object):
         self.min_length = min_length
 
     def geocode(self, doc=None, loclist=None):
-        results = {}
+        locTexts = []
         if doc is not None:
-            locTexts = [(l['expr'].lower(), self.min_popln) for l in doc["BasisEnrichment"]["entities"]
-                        if ((l["neType"] == "LOCATION") and len(l['expr']) >= self.min_length)]
-            urlinfo = urlparse(doc["url"] if doc.get("url", "") else doc.get("link", ""))
-            if urlinfo.netloc != "":
-                urlsubject = urlinfo.path.split("/", 2)[1]
-                urlcountry = urlinfo.netloc.rsplit(".", 1)[-1]
-                if len(urlcountry.strip()) == 2:
-                    urlcountry = self.gazetteer.get_country(urlcountry.upper())
-                    if urlcountry != []:
-                        urlcountry = urlcountry[0]
-                        urlcountry.confidence = 1.0
-                        results["url"] = LocationDistribution(urlcountry)
-                        results["url"].frequency = 1
-                if self.min_length < len(urlsubject) < 20:
-                    locTexts.append((urlsubject.lower(), 15000))
-        elif loclist is not None:
-            locTexts = [(l.lower(), self.min_popln) for l in loclist]
+            # Get all location entities from document with atleast min_length characters
+            locTexts += [l['expr'].lower() for l in doc["BasisEnrichment"]["entities"]
+                         if ((l["neType"] == "LOCATION") and
+                             len(l['expr']) >= self.min_length)]
 
+        if loclist is not None:
+            locTexts += [l.lower() for l in loclist]
+
+        results = self.get_locations_fromURL((doc["url"] if doc.get("url", "")
+                                              else doc.get("link", "")))
         return self.geocode_fromList(locTexts, results)
 
-    def geocode_fromList(self, locTexts, results=None):
+    def geocode_fromList(self, locTexts, results=None, min_popln=None):
         if results is None:
             results = {}
 
+        if min_popln is None:
+            min_popln = self.min_popln
+
         for l in locTexts:
             try:
-                if l[0] in results:
-                    results[l[0]].frequency += 1
+                if l in results:
+                    results[l].frequency += 1
                 else:
-                    results[l[0]] = LocationDistribution(self.gazetteer.query(l[0], min_popln=l[1]))
-                    results[l[0]].frequency = 1
+                    q = self.gazetteer.query(l, min_popln=min_popln)
+                    if not q:
+                        for sub in l.split(","):
+                            sub = sub.strip()
+                            if sub in results:
+                                results[sub].frequency += 1
+                            else:
+                                results[sub] = LocationDistribution(self.gazetteer.query(sub, min_popln=min_popln))
+                                results[sub].frequency = 1
+                    else:
+                        results[l] = LocationDistribution(q)
+                        results[l].frequency = 1
             except:
-                log.exception("Unable to make query for string - {}".format(encode(l[0])))
+                log.exception("Unable to make query for string - {}".format(encode(l)))
 
         scores = self.score(results)
         custom_max = lambda x: max(x.viewvalues(),
                                    key=lambda y: y['score'])
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
+        #ipdb.set_trace()
         return lmap, max(lmap.values(), key=lambda x: x['score'])['geo_point'] if scores else {}
+
+    def get_locations_fromURL(self, url):
+        """
+        Parse URL to get URL COUNTRY and also URL SUBJECT like taiwan in
+        'cnn.com/taiwan/protest.html'
+
+        Params:
+            url - a web url
+
+        Returns:
+            Dict of locations obtained from URL
+        """
+        results = {}
+        urlinfo = urlparse(url)
+        if urlinfo.netloc != "":
+            urlsubject = urlinfo.path.split("/", 2)[1]
+            urlcountry = urlinfo.netloc.rsplit(".", 1)[-1]
+            # Find URL DOMAIN Country from 2 letter iso-code
+            if len(urlcountry.strip()) == 2:
+                urlcountry = self.gazetteer.get_country(urlcountry.upper())
+                if urlcountry != []:
+                    urlcountry = urlcountry[0]
+                    urlcountry.confidence = 1.0
+                    results["URL-DOMAIN_{}".format(urlcountry)] = LocationDistribution(urlcountry)
+                    results["URL-DOMAIN"].frequency = 1
+
+            if self.min_length < len(urlsubject) < 20:
+                usubj_q = self.gazetteer.query(urlsubject, 15000)
+                if usubj_q:
+                    results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
+        return results
 
     def annotate(self, doc):
         """
@@ -87,6 +126,7 @@ class BaseGeo(object):
 
     def score(self, results):
         scoresheet = defaultdict(float)
+        num_mentions = float(sum((l.frequency for l in results.values())))
 
         def update(l):
             for s in l.city:
@@ -95,14 +135,19 @@ class BaseGeo(object):
                 scoresheet[s] += l.admin1[s] * l.frequency
             for s in l.country:
                 scoresheet[s] += l.country[s] * l.frequency
-        [update(item) for item in results.viewvalues()]
+
+        _ = [update(item) for item in results.viewvalues()]
+        for s in scoresheet:
+            scoresheet[s] /= num_mentions
+
         return scoresheet
 
     def get_locRanks(self, scores, loc_cand):
         """
         Each city score needs to be re-inforced with the
         corresponding state and country scores to get the actual meaning
-        of that name. For example, several mentions of cities within virginia would have given virginia
+        of that name. For example, several mentions of cities within virginia
+        would have given virginia
         state a high score. Now this high score has to be brought back to lower levels to
         decide on meaning of each name/city
         """
@@ -110,18 +155,36 @@ class BaseGeo(object):
 
         def get_realization_score(l):
             lscore_map = {}
-            for s in l.realizations:
-                base_score = scores[s]
-                if l.realizations[s].ltype not in ('country', 'admin'):
-                    l_adminstr = encode('/'.join([l.realizations[s].country,
-                                           l.realizations[s].admin1, '']))
+            for lstr, r in l.realizations.viewitems():
+                base_score = scores[lstr]
+                if r.ltype == 'city':
+                    l_adminstr = '/'.join([r.country, r.admin1, ''])
+                    base_score = (base_score + scores[l_adminstr] + scores[r.country + "//"]) * r.confidence
 
-                    base_score += scores[l_adminstr] + scores[l.realizations[s].country]
+                elif r.ltype == 'admin1':
+                    base_score = (base_score + scores[r.country + "//"]) * r.confidence
 
-                elif l.realizations[s].ltype == 'admin':
-                    base_score += scores[l.realizations[s].country]
+                elif r.ltype == "country":
+                    # do nothing
+                    pass
+                else:
+                    ipdb.set_trace()
+                    raise Exception("Unknown location type-{} for {}".format(r.ltype, lstr))
 
-                lscore_map[s] = {'score': base_score, 'geo_point': l.realizations[s].__dict__}
+                lscore_map[lstr] = {'score': base_score, 'geo_point': r.__dict__}
+
+            #for s in l.realizations:
+            #    base_score = scores[s]
+            #    if l.realizations[s].ltype not in ('country', 'admin'):
+            #        l_adminstr = encode('/'.join([l.realizations[s].country,
+            #                               l.realizations[s].admin1, '']))
+
+            #        base_score += scores[l_adminstr] + scores[l.realizations[s].country]
+
+            #    elif l.realizations[s].ltype == 'admin':
+            #        base_score += scores[l.realizations[s].country]
+
+            #    lscore_map[s] = {'score': base_score, 'geo_point': l.realizations[s].__dict__}
             return lscore_map
 
         for locpt in loc_cand:
