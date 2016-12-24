@@ -106,7 +106,7 @@ class GeoNames(BaseGazetteer):
                              FROM allcountries as a
                              INNER JOIN alternatenames as b ON a.geonameid=b.geonameid
                              WHERE
-                             (country="{0}" OR b.alternatename="{0}") LIMIT 1""".format(name))
+                             (country=? OR b.alternatename=?) LIMIT 1""", (name, name))
 
     def _querystate(self, name):
         """
@@ -116,9 +116,9 @@ class GeoNames(BaseGazetteer):
                    'admin' as 'ltype', 'featureCOde' as 'ADM1'
                    FROM allcountries as b INNER JOIN alladmins as a on
                    substr(a.key, 0, 3)=b.ISO
-                   WHERE (a.name="{0}" or a.asciiname="{0}")
-                   """.format(name)
-        return self.db.query(stmt)
+                   WHERE (a.name=? or a.asciiname=?)
+                   """
+        return self.db.query(stmt, (name, name))
 
     def _querycity(self, name, min_popln=0):
         """
@@ -132,9 +132,9 @@ class GeoNames(BaseGazetteer):
                INNER JOIN allcities as a ON a.countryCode=c.ISO
                LEFT OUTER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
                WHERE
-               (a.name="{0}" or a.asciiname="{0}") and a.population >= {1}
-               """.format(name, min_popln)
-        res = self.db.query(stmt)
+               (a.name=? or a.asciiname=?) and a.population >= ?
+               """
+        res = self.db.query(stmt, (name, name, min_popln))
         return res
 
     def _query_alternatenames(self, name, min_popln=0):
@@ -148,10 +148,10 @@ class GeoNames(BaseGazetteer):
                 INNER JOIN allcities as a ON a.id=d.geonameId
                 INNER JOIN allcountries as c ON a.countryCode=c.ISO
                 LEFT OUTER JOIN alladmins as b ON a.countryCode||'.'||a.admin1 = b.key
-                WHERE alternatename="{0}" and
-                a.population >= {1}""".format(name, min_popln)
+                WHERE alternatename=? and
+                a.population >=?"""
 
-        res = self.db.query(stmt)
+        res = self.db.query(stmt, (name, min_popln))
         return res
 
     def get_locInfo(self, country=None, admin=None, city=None, strict=False):
@@ -167,27 +167,33 @@ class GeoNames(BaseGazetteer):
                b.name as 'admin1', a.featureClass,
                a.featureCOde, a.countryCode as 'countryCode'
                FROM allcities a
-               LEFT OUTER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
+               INNER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
                INNER JOIN allcountries c ON a.countryCode=c.ISO
                WHERE """
 
         if isempty(city) and isempty(admin):
-            stmt += u"""c.country="{0}" ORDER BY a.population DESC LIMIT 1""".format(country)
+            stmt += u"""c.country=? ORDER BY a.population DESC LIMIT 1"""
+            params = (country,)
 
         elif isempty(city):
-            stmt += u""" (b.name="{0}" or b.asciiname="{0}")
-                    and c.country="{1}" ORDER BY a.population DESC LIMIT 1""".format(admin, country)
+            stmt += u""" a.featureCOde == "ADM1" and (b.name=? or b.asciiname=?)
+                    and c.country=? ORDER BY a.population DESC LIMIT 1"""
+            params = (admin, admin, country)
         else:
             if strict:
-                stmt += u""" (a.name="{0}" or a.asciiname="{0}") and
-                             (b.name="{1}" or b.asciiname="{1}") and
-                             c.country="{2}" ORDER BY a.population DESC""".format(city, admin,
-                                                                                  country)
-            else:
-                stmt += u""" (a.name="{0}" or a.asciiname="{0}") and
-                             c.country="{1}" ORDER BY a.population DESC""".format(city, country)
+                stmt += u""" (a.name=? or a.asciiname=?) and
+                             (b.name=? or b.asciiname=?) and
+                             c.country=?
+                             ORDER BY a.population DESC LIMIT 1"""
 
-        res = self.db.query(stmt)
+                params = (city, city, admin, admin, country)
+            else:
+                stmt += u""" (a.name=? or a.asciiname=?) and
+                             c.country=? ORDER BY a.population DESC LIMIT 1"""
+
+                params = (city, city, country)
+
+        res = self.db.query(stmt, params)
         if res == []:
             res = self._get_locInfo_from_alternate(country=country, admin=admin, city=city)
 
@@ -205,17 +211,19 @@ class GeoNames(BaseGazetteer):
                WHERE """
 
         if isempty(city) and isempty(admin):
-            stmt += u"""c.country="{0}" ORDER BY a.population DESC""".format(country)
+            stmt += u"""c.country=? ORDER BY a.population DESC"""
+            params = (country, )
         elif isempty(city):
-            stmt += u"""alternatename="{0}"
+            stmt += u"""alternatename=?
                        and a.featureCOde == "ADM1"
-                       and c.country="{1}" ORDER BY a.population DESC""".format(admin, country)
+                       and c.country=? ORDER BY a.population DESC""".format(admin, country)
+            params = (admin, country)
         else:
-            stmt += u"""alternatename="{0}"
-                        and c.country="{1}" ORDER BY a.population DESC""".format(city,
-                                                                                 country)
+            stmt += u"""alternatename=?
+                        and c.country=? ORDER BY a.population DESC"""
+            params = (city, country)
 
-        return self.db.query(stmt)
+        return self.db.query(stmt, params)
 
     def get_locById(self, locId):
         stmt = u"""SELECT a.id as geonameid, a.name,
@@ -226,14 +234,14 @@ class GeoNames(BaseGazetteer):
                INNER JOIN alladmins b ON a.countryCode||'.'||a.admin1 = b.key
                INNER JOIN allcountries c ON a.countryCode=c.ISO
                WHERE
-               a.id='{}'
-               """.format(locId)
+               a.id=?
+               """
 
-        return self.db.query(stmt)
+        return self.db.query(stmt, (locId,))
 
     def get_country(self, cc2):
         res = self.db.query("""SELECT *, 'country' as 'ltype' FROM
-                            allcountries where ISO='{}'""".format(cc2))
+                            allcountries where ISO=?""", (cc2,))
         for l in res:
             l.confidence = 0.50
 

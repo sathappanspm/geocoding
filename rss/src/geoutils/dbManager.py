@@ -6,6 +6,7 @@
     Last Modified:
 """
 
+#import ipdb
 import unicodecsv
 import sqlite3
 #import gsqlite3 as sqlite3
@@ -45,15 +46,17 @@ class SQLiteWrapper(BaseDB):
         self.conn.execute('PRAGMA synchronous = OFF')
         self.conn.execute('PRAGMA journal_mode = OFF')
         self.conn.execute("PRAGMA cache_size=5000000")
-        self.cursor = self.conn.cursor()
         self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
         self.name = dbname
 
-    def query(self, stmt=None, items=[]):
+    def query(self, stmt=None, params=None):
+        #self.conn = sqlite3.connect(self.dbpath)
         #cursor = self.conn.cursor()
         #cursor.row_factory = sqlite3.Row
-        result = self.cursor.execute(stmt)
-        #result = cursor.execute(stmt)
+        #ipdb.set_trace()
+        result = self.cursor.execute(stmt, params)
+        #result = cursor.execute(stmt, params)
         result = [GeoPoint(**dict(l)) for l in result.fetchall()]
         #result = [GeoPoint(**dict(l)) for l in result.fetchmany(1000)]
         #conn.close()

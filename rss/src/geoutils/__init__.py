@@ -110,15 +110,21 @@ class GeoPoint(GeoData):
             if kwargs.get('featureCOde', "") == 'ADM1':
                 ltype = 'admin'
 
-            if 'featureClass' in kwargs:
+            elif 'featureClass' in kwargs:
                 ltype = FEATURE_MAP[kwargs['featureClass']]
+
                 if ltype == 'city':
                     self.city = kwargs['name']
+
 
         self.ltype = ltype
         # set all remaining extra information in kwargs
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
+
+        if (kwargs.get('featureCOde', "") == 'ADM2') or (kwargs.get('featureCOde', "") == "ADM3"):
+            #ltype = 'admin2'
+            self.city = kwargs['name']
 
         if hasattr(self, 'admin1'):
             if self.admin1 is None:
@@ -133,7 +139,7 @@ class GeoPoint(GeoData):
         """
         print country/admin/city string
         """
-        return encode("/".join([self.country, self.admin1, self.city]))
+        return "/".join([self.country, self.admin1, self.city])
 
 
 class LocationDistribution(GeoData):
