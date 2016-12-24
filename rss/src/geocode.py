@@ -102,7 +102,7 @@ class BaseGeo(object):
                     urlcountry = urlcountry[0]
                     urlcountry.confidence = 1.0
                     results["URL-DOMAIN_{}".format(urlcountry)] = LocationDistribution(urlcountry)
-                    results["URL-DOMAIN"].frequency = 1
+                    results["URL-DOMAIN_{}".format(urlcountry)].frequency = 1
 
             if self.min_length < len(urlsubject) < 20:
                 usubj_q = self.gazetteer.query(urlsubject, 15000)
