@@ -16,6 +16,7 @@ import pandas as pd
 from . import GeoPoint, encode, blacklist, loc_default, isempty
 # from . import loc_default, blacklist
 # from . import isempty
+from pylru import lrudecorator
 import logging
 
 log = logging.getLogger("rssgeocoder")
@@ -45,6 +46,7 @@ class GeoNames(BaseGazetteer):
         else:
             self.priority = priority
 
+    @lrudecorator(10000)
     def query(self, name, min_popln=0):
         """
         Search the locations DB for the given name
@@ -61,6 +63,9 @@ class GeoNames(BaseGazetteer):
             return []
 
         country = self._querycountry(name)
+        #admin = self._querystate(name)
+        #city = self._querycity(name, min_popln=min_popln)
+        #alternateNames = self._query_alternatenames(name, min_popln)
         if country == []:
             admin = self._querystate(name)
             city = self._querycity(name, min_popln=min_popln)
@@ -163,13 +168,33 @@ class GeoNames(BaseGazetteer):
         res = self.db.query(stmt, (name, min_popln))
         return res
 
-    def get_locInfo(self, country=None, admin=None, city=None, strict=False):
+    def normalize_statenames(self, country, admin):
+        # get unofficial state name
+        stmt = """ SELECT b.asciiname, c.country FROM allcities AS a INNER JOIN allcountries as c
+               ON a.countryCode=c.ISO INNER JOIN alladmins as b
+               ON b.geonameid=a.id
+               WHERE
+               (a.name=? or a.asciiname=?) and c.country=?
+               and a.featureClass="A"
+               """
+        sub_res = self.db.query(stmt, (admin, admin, country))
+        if sub_res:
+            if len(sub_res) > 1:
+                log.warning("More results returned than necessary-{}".format(admin))
+
+            admin = sub_res[0].asciiname
+        return admin
+
+    def get_locInfo(self, country=None, admin=None, city=None):
         """
         return full loc tuple of name, admin1 name, country, population,
         longitude etc.
         """
         if city and (city.lower() == "ciudad de mexico" or city.lower() == u"ciudad de méxico"):
             city = "mexico city"
+
+        if not isempty(admin):
+            admin = self.normalize_statenames(country, admin)
 
         stmt = u"""SELECT a.id as geonameid, a.name,
                a.population,a.latitude, a.longitude, c.country as 'country',
@@ -189,18 +214,12 @@ class GeoNames(BaseGazetteer):
                     and c.country=? ORDER BY a.population DESC LIMIT 1"""
             params = (admin, admin, country)
         else:
-            if strict:
-                stmt += u""" (a.name=? or a.asciiname=?) and
-                             (b.name=? or b.asciiname=?) and
-                             c.country=?
-                             ORDER BY a.population DESC LIMIT 1"""
+            stmt += u""" (a.name=? or a.asciiname=?) and
+                         (b.name=? or b.asciiname=?) and
+                         c.country=?
+                         ORDER BY a.population DESC LIMIT 1"""
 
-                params = (city, city, admin, admin, country)
-            else:
-                stmt += u""" (a.name=? or a.asciiname=?) and
-                             c.country=? ORDER BY a.population DESC LIMIT 1"""
-
-                params = (city, city, country)
+            params = (city, city, admin, admin, country)
 
         res = self.db.query(stmt, params)
         if res == []:
