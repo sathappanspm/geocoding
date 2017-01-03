@@ -8,17 +8,18 @@
 
 __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 
 
 import os
 import sys
 from loc_config import loc_default, blacklist
 from collections import defaultdict
-#import logging
+import logging
+import json
 import ipdb
 
-#log = logging.getLogger("__init__")
+log = logging.getLogger("__init__")
 FEATURE_MAP = {"A": "region", "H": "water body",
                "L": "parks area", "R": "road", "S": "Building",
                "T": "mountain", "U": "undersea", "V": "forest",
@@ -96,12 +97,67 @@ class GeoData(object):
         pass
 
 
+class COUNTRY_INFO(dict):
+    def __init__(self, path=None):
+        if path is None:
+            path = os.path.join(os.path.dirname(__file__),
+                                "countryInfo.json")
+        with open(path) as inf:
+            data = json.load(inf)
+
+        self.code2name = {l['ISO']: l for l in data.viewvalues()}
+        super(COUNTRY_INFO, self).__init__(data)
+
+    def query(self, name):
+        if name in self:
+            return [self[name]]
+        else:
+            return []
+
+    def fromISO(self, code):
+        return self.code2name[code]
+
+
+class ADMIN_INFO(dict):
+    def __init__(self, path=None):
+        if path is None:
+            path = os.path.join(os.path.dirname(__file__),
+                                "adminInfo.json")
+
+        with open(path) as inf:
+            dd = [json.loads(l) for l in inf]
+            data = {}
+            code2name = {}
+            for l in dd:
+                l['ltype'] = 'admin1'
+                data[l['admin1'].lower()] = l
+                data[l['admin1_ascii'].lower()] = l
+                data[l['asciiname'].lower()] = l
+                code2name[l['key']] = l
+
+        self.code2name = code2name
+        super(ADMIN_INFO, self).__init__(data)
+
+    def query(self, name):
+        if name in self:
+            admin = self[name]
+            admin['countryCode'] = admin['key'].split('.')[0]
+            return [admin]
+        else:
+            return []
+
+    def fromCode(self, country, code):
+        if code == "00":
+            return {'admin1': ""}
+
+        return self.code2name['{}.{}'.format(country, code)]
+
+
 class GeoPoint(GeoData):
     """
     Location Data Type
     """
-    def __init__(self, population=0,
-                 ltype=None, **kwargs):
+    def __init__(self, population=0, **kwargs):
 
         # self.orig_dict = kwargs
         if isinstance(population, basestring):
@@ -109,29 +165,27 @@ class GeoPoint(GeoData):
         else:
             self.population = population
 
-        self.city, self.admin1, self.country = '', '', ''
-        if ltype is None:
-            if kwargs.get('featureCOde', "") == 'ADM1':
-                ltype = 'admin1'
+        #self.city, self.admin1, self.country = '', '', ''
+        ltype = self._get_ltype(kwargs)
 
-            elif 'featureClass' in kwargs:
-                ltype = FEATURE_MAP[kwargs['featureClass']]
-
-                if ltype == 'city':
-                    self.city = kwargs['name']
+        if ltype == 'city':
+            self.city = kwargs['name']
 
         self.ltype = ltype
-        #log.info("{}-ltype-{}".format(encode(self.city), kwargs.get('featureCOde', '')))
+        # log.info("{}-ltype-{}".format(encode(self.city), kwargs.get('featureCOde', '')))
         assert kwargs.get('featureClass', 'A') in ("P", "A")
         # set all remaining extra information in kwargs
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
 
-        if (kwargs.get('featureCOde', "") == 'ADM2') or (kwargs.get('featureCOde', "") == "ADM3"):
-            self.ltype = 'city'
-            self.city = kwargs['name']
-
-        self.admin1 = '' if self.admin1 is None else self.admin1
+        #self.admin1 = '' if self.admin1 is None else self.admin1
+        self.country = self._get_country()
+        if ltype != 'country':
+            self.admin1 = self._get_admin1()
+            if ltype == 'admin1':
+                self.city = ""
+        else:
+            self.admin1, self.city = "", ""
 
     def to_dict(self):
         return self.__dict__
@@ -141,6 +195,56 @@ class GeoPoint(GeoData):
         print country/admin/city string
         """
         return "/".join([self.country, self.admin1, self.city])
+
+    def _get_ltype(self, info):
+
+        ltype = None
+        if 'ltype' in info:
+            return info['ltype']
+
+        fcode = info.get('featureCOde', "")
+        fclass = info.get('featureClass', 'P')
+
+        if fcode == "ADM1":
+            ltype = 'admin1'
+
+        if fclass == 'A' and fcode:
+            if fcode[0] not in ('A', 'L'):
+                ltype = 'country'
+
+            elif fcode in ("ADM2", "ADM3"):
+                ltype = 'city'
+
+        if ltype is None:
+            ltype = FEATURE_MAP[fclass]
+
+        return ltype
+
+    def _get_country(self):
+        if self.ltype == 'country':
+            return self.country
+
+        if hasattr(self, 'countryCode'):
+            return CountryDB.fromISO(self.countryCode)['country']
+        else:
+            ipdb.set_trace()
+            raise Exception("No Country info found")
+
+    def _get_admin1(self):
+        if self.ltype == 'admin1':
+            return self.admin1
+
+        if hasattr(self, 'admin1'):
+            if self.admin1.isupper() or self.admin1.isdigit():
+                try:
+                    return AdminDB.fromCode(self.countryCode, self.admin1)['admin1']
+                except Exception:
+                    log.exception('no admin for {}.{}'.format(self.countryCode, self.admin1))
+                    self.admin1 = ""
+            return self.admin1
+        else:
+            ipdb.set_trace()
+            raise Exception('No admin code')
 
 
 class LocationDistribution(GeoData):
@@ -235,3 +339,7 @@ class LocationDistribution(GeoData):
 
     def __eq__(self, cmpObj):
         return self.realizations == cmpObj.realizations
+
+
+CountryDB = COUNTRY_INFO()
+AdminDB = ADMIN_INFO()

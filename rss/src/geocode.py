@@ -11,7 +11,8 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 import ipdb
-from geoutils.gazetteer import GeoNames
+from geoutils.gazetteer_mod import GeoNames
+#from geoutils.gazetteer import GeoNames
 from collections import defaultdict
 from urlparse import urlparse
 from geoutils import LocationDistribution
@@ -360,7 +361,9 @@ if __name__ == "__main__":
             j = geo.annotate(j)
             #log.debug("geocoded line no:{}, {}".format(lno,
             #                                           encode(j.get("link", ""))))
-            #lno += 1
+            lno += 1
+            if lno > 100:
+                break
             outfile.write(encode(json.dumps(j, ensure_ascii=False)) + "\n")
         except:
             log.exception("Unable to readline")
