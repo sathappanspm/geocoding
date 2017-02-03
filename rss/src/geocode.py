@@ -10,14 +10,14 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-import ipdb
+#import ipdb
 from geoutils.gazetteer_mod import GeoNames
 #from geoutils.gazetteer import GeoNames
 from collections import defaultdict
 from urlparse import urlparse
 from geoutils import LocationDistribution
 import logging
-from geoutils import encode
+from geoutils import encode, isempty
 
 
 logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
@@ -159,19 +159,26 @@ class BaseGeo(object):
             lscore_map = {}
             for lstr, r in l.realizations.viewitems():
                 base_score = scores[lstr]
-                if r.ltype == 'city':
+                #if r.ltype == 'city':
+                if not isempty(r.city):
                     l_adminstr = '/'.join([r.country, r.admin1, ''])
                     base_score = (base_score + scores[l_adminstr] + scores[r.country + "//"]) * r.confidence
 
-                elif r.ltype == 'admin1':
+                elif not isempty(r.admin1):
                     base_score = (base_score + scores[r.country + "//"]) * r.confidence
 
                 elif r.ltype == "country":
                     # do nothing
                     pass
                 else:
-                    ipdb.set_trace()
-                    raise Exception("Unknown location type-{} for {}".format(r.ltype, lstr))
+                    base_score = base_score * r.confidence
+                    # code for other types
+                    #if not isempty(r.city):
+                    #    l_adminstr = '/'.join([r.country, r.admin1, ''])
+                    #    base_score = (base_score + scores[l_adminstr] + scores[r.country + "//"]) * r.confidence
+
+                    #ipdb.set_trace()
+                    #raise Exception("Unknown location type-{} for {}".format(r.ltype, lstr))
 
                 lscore_map[lstr] = {'score': base_score, 'geo_point': r.__dict__}
 
@@ -355,6 +362,7 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
+
     for l in infile:
         try:
             j = json.loads(l)
@@ -362,8 +370,6 @@ if __name__ == "__main__":
             #log.debug("geocoded line no:{}, {}".format(lno,
             #                                           encode(j.get("link", ""))))
             lno += 1
-            if lno > 100:
-                break
             outfile.write(encode(json.dumps(j, ensure_ascii=False)) + "\n")
         except:
             log.exception("Unable to readline")

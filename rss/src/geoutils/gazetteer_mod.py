@@ -20,6 +20,7 @@ from . import GeoPoint, encode, blacklist, loc_default, isempty, CountryDB, Admi
 from pylru import lrudecorator
 import logging
 import os
+import ipdb
 
 log = logging.getLogger("rssgeocoder")
 
@@ -74,8 +75,8 @@ class GeoNames(BaseGazetteer):
         #alternateNames = self._query_alternatenames(name, min_popln)
         if country == []:
             admin = self._querystate(name)
-            city = self._querycity(name, min_popln=min_popln)
-            alternateNames = self._query_alternatenames(name, min_popln)
+            city = self._querycity(name)
+            alternateNames = self._query_alternatenames(name)
             #g1 = gevent.spawn(self._querystate, name)
             #g2 = gevent.spawn(self._querycity, name, min_popln=min_popln)
             #g3 = gevent.spawn(self._query_alternatenames, name, min_popln)
@@ -95,18 +96,27 @@ class GeoNames(BaseGazetteer):
             if df.shape[0] == 1:
                 df['confidence'] = 1.0
             else:
-                df['confidence'] = 0.5
+                #df['confidence'] = 0.0
 
-                try:
-                    df['population'] = (df['population'] + 1).astype(float)
-                except Exception, e:
-                    raise e
+                #dfcity = df[df.featureClass.str.match('A|P')]
+                #if not dfcity.empty:
+                #    df = dfcity.reindex(copy=True)
+                dfpop = df[df.population > (min_popln + 1)]
+                if not dfpop.empty:
+                    df = dfpop.reindex(copy=True)
+                    try:
+                        df['population'] = (df['population'] + 10).astype(float)
+                    except Exception, e:
+                        raise e
 
-                #dfn = df[df["ltype"] == "city"]
-                #if not dfn.empty:
-                #    df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
-                #                                                    (2 * (dfn['population'].sum())))
-                df['confidence'] += (df['population'] / (2 * df['population'].sum()))
+                    #dfn = df[df["ltype"] == "city"]
+                    #if not dfn.empty:
+                    #    df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
+                    #                                                    (2 * (dfn['population'].sum())))
+                    #df['confidence'] += (df['population'] / (2 * df['population'].sum()))
+                    df['confidence'] = (df['population'] / (df['population'].sum()))
+                else:
+                    df['confidence'] = 0.01
 
             ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
 
@@ -143,35 +153,35 @@ class GeoNames(BaseGazetteer):
         #           """
         #return self.db.query(stmt, (name, name))
 
-    def _querycity(self, name, min_popln=0):
+    def _querycity(self, name):
         """
         Check if name is a city name
         """
-        stmt = u"""SELECT a.id as geonameid, a.name,
-               a.population, a.latitude, a.longitude,
-               a.featureClass, a.countryCode, a.featureCOde, a.admin1
-               FROM allcities as a WHERE
-               (a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P") and
-               (a.name=? or a.asciiname=?) and a.population >= ?
+        stmt = u"""SELECT id as geonameid, name,
+               population, latitude, longitude, countryCode,
+               admin1, admin2, featureClass, featureCOde
+               FROM allcities WHERE
+               (name=? or asciiname=?) and featureClass != ""
                """
-        res = self.db.query(stmt, (name, name, min_popln))
+               #(a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P") and
+        res = self.db.query(stmt, (name, name))
         return res
 
-    def _query_alternatenames(self, name, min_popln=0):
+    def _query_alternatenames(self, name):
         """
         check if name matches alternate name
         """
-        stmt = u"""SELECT DISTINCT a.id as geonameid, a.name, a.population,
-                a.latitude, a.longitude,
-                a.featureClass, a.featureCOde, a.countryCode, a.admin1
+        stmt = u"""SELECT a.id as geonameid, a.name,
+                a.population, a.latitude, a.longitude, a.countryCode,
+                a.admin1, a.admin2, a.featureClass, a.featureCOde
                 FROM alternatenames as d
                 INNER JOIN allcities as a ON a.id=d.geonameId
                 WHERE
-                (a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P")
-                and alternatename=? and
-                a.population >=?"""
+                d.alternatename=? and a.featureClass != ""
+                """
+                #(a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P")
 
-        res = self.db.query(stmt, (name, min_popln))
+        res = self.db.query(stmt, (name,))
         return res
 
     def normalize_statenames(self, country, admin):

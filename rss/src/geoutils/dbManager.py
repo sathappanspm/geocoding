@@ -42,7 +42,7 @@ class BaseDB(object):
 class SQLiteWrapper(BaseDB):
     def __init__(self, dbpath, dbname="WorldGazetteer"):
         self.dbpath = dbpath
-        self.conn = sqlite3.connect(dbpath)
+        self.conn = sqlite3.connect(dbpath, check_same_thread=False)
         self.conn.execute('PRAGMA synchronous = OFF')
         self.conn.execute('PRAGMA journal_mode = OFF')
         self.conn.execute("PRAGMA cache_size=5000000")
@@ -52,11 +52,11 @@ class SQLiteWrapper(BaseDB):
 
     def query(self, stmt=None, params=None):
         #self.conn = sqlite3.connect(self.dbpath)
-        #cursor = self.conn.cursor()
-        #cursor.row_factory = sqlite3.Row
+        cursor = self.conn.cursor()
+        cursor.row_factory = sqlite3.Row
         #ipdb.set_trace()
-        result = self.cursor.execute(stmt, params)
-        #result = cursor.execute(stmt, params)
+        #result = self.cursor.execute(stmt, params)
+        result = cursor.execute(stmt, params)
         result = [GeoPoint(**dict(l)) for l in result.fetchall()]
         #result = [GeoPoint(**dict(l)) for l in result.fetchmany(1000)]
         #conn.close()

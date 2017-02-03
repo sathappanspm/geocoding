@@ -21,7 +21,7 @@ import ipdb
 
 log = logging.getLogger("__init__")
 FEATURE_MAP = {"A": "region", "H": "water body",
-               "L": "parks area", "R": "road", "S": "Building",
+               "L": "area", "R": "road", "S": "Building",
                "T": "mountain", "U": "undersea", "V": "forest",
                "P": "city"}
 
@@ -118,6 +118,24 @@ class COUNTRY_INFO(dict):
         return self.code2name[code]
 
 
+class ADMIN2_INFO(dict):
+    def __init__(self, path=None):
+        if path is None:
+            path = os.path.join(os.path.dirname(__file__),
+                                "Admin2Info.json")
+        with open(path) as inf:
+            data = json.load(inf)
+
+        super(ADMIN2_INFO, self).__init__(data)
+
+    def query(self, country, state, district):
+        name = "{}.{}.{}".format(country, state, district)
+        if name in self:
+            return self[name]['name']
+        else:
+            return ""
+
+
 class ADMIN_INFO(dict):
     def __init__(self, path=None):
         if path is None:
@@ -165,19 +183,25 @@ class GeoPoint(GeoData):
         else:
             self.population = population
 
+        if 'geonameid' not in kwargs:
+            kwargs['geonameid'] = kwargs.pop('id')
+
         #self.city, self.admin1, self.country = '', '', ''
         ltype = self._get_ltype(kwargs)
 
-        if ltype == 'city':
-            self.city = kwargs['name']
-
         self.ltype = ltype
+        self.city = ""
         # log.info("{}-ltype-{}".format(encode(self.city), kwargs.get('featureCOde', '')))
-        assert kwargs.get('featureClass', 'A') in ("P", "A")
+        #assert kwargs.get('featureClass', 'A') in ("P", "A")
         # set all remaining extra information in kwargs
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
 
+        #ipdb.set_trace()
+        if ltype == 'city':
+            self.city = kwargs['name']
+        elif ltype not in ('admin1', 'country') and self.admin2:
+            self.city = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
         #self.admin1 = '' if self.admin1 is None else self.admin1
         self.country = self._get_country()
         if ltype != 'country':
@@ -211,6 +235,7 @@ class GeoPoint(GeoData):
         if fclass == 'A' and fcode:
             if fcode[0] not in ('A', 'L'):
                 ltype = 'country'
+                self.country = info['name']
 
             elif fcode in ("ADM2", "ADM3"):
                 ltype = 'city'
@@ -224,11 +249,12 @@ class GeoPoint(GeoData):
         if self.ltype == 'country':
             return self.country
 
-        if hasattr(self, 'countryCode'):
+        if hasattr(self, 'countryCode') and self.countryCode:
             return CountryDB.fromISO(self.countryCode)['country']
         else:
-            ipdb.set_trace()
-            raise Exception("No Country info found")
+            #ipdb.set_trace()
+            #raise Exception("No Country info found")
+            return ""
 
     def _get_admin1(self):
         if self.ltype == 'admin1':
@@ -239,11 +265,11 @@ class GeoPoint(GeoData):
                 try:
                     return AdminDB.fromCode(self.countryCode, self.admin1)['admin1']
                 except Exception:
-                    log.exception('no admin for {}.{}'.format(self.countryCode, self.admin1))
+                    #log.exception('no admin for {}.{}'.format(self.countryCode, self.admin1))
                     self.admin1 = ""
             return self.admin1
         else:
-            ipdb.set_trace()
+            #ipdb.set_trace()
             raise Exception('No admin code')
 
 
@@ -343,3 +369,4 @@ class LocationDistribution(GeoData):
 
 CountryDB = COUNTRY_INFO()
 AdminDB = ADMIN_INFO()
+Admin2DB = ADMIN2_INFO()
