@@ -52,6 +52,14 @@ def encode(s):
         return s
 
 
+def decode(s):
+    try:
+        return s.decode("utf-8")
+    except:
+        return s
+
+
+
 # code from smart_open package https://github.com/piskvorky/smart_open
 
 def make_closing(base, **attrs):
@@ -129,11 +137,22 @@ class ADMIN2_INFO(dict):
         super(ADMIN2_INFO, self).__init__(data)
 
     def query(self, country, state, district):
-        name = "{}.{}.{}".format(country, state, district)
+        name = u"{}.{}.{}".format(country, state, district)
         if name in self:
             return self[name]['name']
         else:
             return ""
+
+    def _encode_name(self, country, state, district):
+        """
+        returns unicode string of format country.state.district
+        """
+        try:
+            name = u"{}.{}.{}".format(country, state, district)
+        except UnicodeDecodeError:
+            name = u"{}.{}.{}".format(decode(country), decode(state),
+                                      decode(district))
+        return name
 
 
 class ADMIN_INFO(dict):
