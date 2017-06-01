@@ -16,6 +16,8 @@ import os
 from . import GeoPoint, safe_convert, isempty
 from pymongo import MongoClient
 import json
+from pyelasticsearch import bulk_chunks, ElasticSearch
+import gzip
 
 unicodecsv.field_size_limit(sys.maxsize)
 
@@ -51,25 +53,23 @@ class SQLiteWrapper(BaseDB):
         self.name = dbname
 
     def query(self, stmt=None, params=None):
-        #self.conn = sqlite3.connect(self.dbpath)
+        # self.conn = sqlite3.connect(self.dbpath)
         cursor = self.conn.cursor()
         cursor.row_factory = sqlite3.Row
-        #ipdb.set_trace()
-        #result = self.cursor.execute(stmt, params)
+        # ipdb.set_trace()
+        # result = self.cursor.execute(stmt, params)
         result = cursor.execute(stmt, params)
         result = [GeoPoint(**dict(l)) for l in result.fetchall()]
-        #result = [GeoPoint(**dict(l)) for l in result.fetchmany(1000)]
-        #conn.close()
+        # result = [GeoPoint(**dict(l)) for l in result.fetchmany(1000)]
+        # conn.close()
         return result
 
     def insert(self, msg, dup_id):
         return
 
-    #outdated function
+    # outdated function
     def _create(self, csvPath, columns, delimiter="\t", coding='utf-8', **kwargs):
         with open(csvPath, "rU") as infile:
- #           dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
-                                                 #delimiters=delimiter)
             infile.seek(0)
             reader = unicodecsv.DictReader(infile, dialect='excel',
                                            fieldnames=columns, encoding=coding)
@@ -86,8 +86,6 @@ class SQLiteWrapper(BaseDB):
     def create(self, csvfile, fmode='r', delimiter='\t',
                coding='utf-8', columns=[], header=False, **kwargs):
         with open(csvfile, fmode) as infile:
- #           dialect = unicodecsv.Sniffer().sniff(infile.read(10240),
- #                                                delimiters=delimiter)
             infile.seek(0)
             if header:
                 try:
@@ -97,8 +95,6 @@ class SQLiteWrapper(BaseDB):
                 except Exception:
                     pass
 
-            #reader = unicodecsv.DictReader(infile, dialect='excel',
-            #                               fieldnames=columns, encoding=coding)
             self.cursor.execute(''' CREATE TABLE IF NOT EXISTS {} ({})'''.format(self.name,
                                                                                  ','.join(columns)))
 
@@ -107,15 +103,18 @@ class SQLiteWrapper(BaseDB):
 
             self.cursor.executemany('''INSERT INTO {}
                                     VALUES ({})'''.format(self.name, columnstr),
-                                    (tuple([i for i in c.decode("utf-8").split("\t")]) for c in reader))
-                                    #(tuple([c[i] for i in columns]) for c in reader))
+                                    (tuple([i for i in c.decode("utf-8").split("\t")])
+                                     for c in reader)
+                                    )
+            # (tuple([c[i] for i in columns]) for c in reader))
             self.conn.commit()
             if 'index' in kwargs:
                 for i in kwargs['index']:
                     col, iname = i.split()
-                    self.cursor.execute('CREATE INDEX IF NOT EXISTS {} ON {} ({})'.format(iname.strip(),
-                                                                                          self.name,
-                                                                                          col.strip()))
+                    self.cursor.execute('''CREATE INDEX IF NOT
+                                           EXISTS {} ON {} ({})'''.format(iname.strip(),
+                                                                          self.name,
+                                                                          col.strip()))
                     self.conn.commit()
             self.conn.commit()
 
@@ -125,6 +124,70 @@ class SQLiteWrapper(BaseDB):
     def drop(self, tablename):
         self.cursor.execute("DROP TABLE IF EXISTS {}".format(tablename))
         self.conn.commit()
+
+
+class DataReader(object):
+    def __init__(self, dataFile, configFile):
+        self.columns = self._readConfig(configFile)
+        self.dataFile = gzip.open(dataFile)
+
+    def _readConfig(self, cfile):
+        with open(cfile) as conf:
+            cols = [l.split(" ", 1)[0] for l in json.load(conf)['columns']]
+
+        return cols
+
+    def next(self):
+        row = dict(zip(self.columns, self.dataFile.next().decode("utf-8").lower().split("\t")))
+        return row
+
+    def __iter__(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self):
+        return self.close()
+
+    def close(self):
+        self.dataFile.close()
+
+
+class ESWrapper(BaseDB):
+    def __init__(self, index_name, host='http://localhost', port=9200):
+        self.eserver = ElasticSearch(urls=host, port=port,
+                                     timeout=60, max_retries=3)
+
+    def query(self, name):
+        pass
+
+    def create(self, datacsv, confDir="../data/"):
+        with open(os.path.join(confDir, "es_settings.json")) as jf:
+            settings = json.load(jf)
+
+        #self.eserver.create_index(index='geonames', settings=settings)
+        for chunk in bulk_chunks(self._opLoader(datacsv, confDir),
+                                 docs_per_chunk=1000):
+            self.eserver.bulk(chunk, index='geonames', doc_type='places')
+            print "..",
+
+        self.eserver.refresh('geonames')
+
+    def _opLoader(self, datacsv, confDir):
+        with DataReader(datacsv, os.path.join(confDir, 'geonames.conf')) as reader:
+            cnt = 0
+            for row in reader:
+                row['coordinates'] = [row['longitude'], row['latitude']]
+                del(row['latitude'])
+                del(row['longitude'])
+                row['alternatenames'] = row['alternatenames'].split(",")
+                print "inseted"
+                cnt += 1
+                if cnt > 100:
+                    break
+
+                yield self.eserver.index_op(row)
 
 
 class MongoDBWrapper(BaseDB):
@@ -150,6 +213,7 @@ class MongoDBWrapper(BaseDB):
             for l in acsv:
                 row = dict(zip(columns, l.decode('utf-8').lower().split("\t")))
                 admin1[row['key']] = row
+
 
         with open(countryCsv) as ccsv:
             with open(os.path.join(confDir, "geonames_countryInfo.conf")) as t:
