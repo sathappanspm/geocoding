@@ -130,6 +130,7 @@ class DataReader(object):
     def __init__(self, dataFile, configFile):
         self.columns = self._readConfig(configFile)
         self.dataFile = gzip.open(dataFile)
+        #self.dataFile = open(dataFile)
 
     def _readConfig(self, cfile):
         with open(cfile) as conf:
@@ -138,7 +139,7 @@ class DataReader(object):
         return cols
 
     def next(self):
-        row = dict(zip(self.columns, self.dataFile.next().decode("utf-8").lower().split("\t")))
+        row = dict(zip(self.columns, self.dataFile.next().decode("utf-8").lower().strip().split("\t")))
         return row
 
     def __iter__(self):
@@ -147,7 +148,7 @@ class DataReader(object):
     def __enter__(self):
         return self
 
-    def __exit__(self):
+    def __exit__(self, *args):
         return self.close()
 
     def close(self):
@@ -158,15 +159,39 @@ class ESWrapper(BaseDB):
     def __init__(self, index_name, host='http://localhost', port=9200):
         self.eserver = ElasticSearch(urls=host, port=port,
                                      timeout=60, max_retries=3)
+        self._base_query = {"query": {"bool": {"must": {"match": {"name.raw": ""}}}}}
+        self._geo_filter = {"geo_distance": {"distance": "20km", "coordinates": {}}}
+        self._index = index_name
+        self._doctype = "places"
 
-    def query(self, name):
-        pass
+    def query(self, qkey, qtype="exact"):
+        """
+        qtype values are exact, relaxed or geo_distance
+        """
+        q = self._base_query.copy()
+        if qtype == "exact":
+            q["query"]["bool"]["must"]["match"]["name.raw"] = qkey
+        elif qtype == "relaxed":
+            q["query"]["bool"]["must"]["match"]["name"] = qkey
+            q["query"]["bool"]["must"]["match"].pop("name.raw")
+        elif qtype == "geo_distance":
+            q = {"query": {"bool": {"must": {"match_all": {}}},
+                           "filter": {"geo_distance": {"distance": "20km",
+                                                       "coordinates": qkey}}}}
+
+        return self.eserver.search(q, index=self._index, doc_type=self._doctype)
+
+    def near_geo(self, geo_point):
+        q = {"query": {"bool": {"must": {"match_all": {}}},
+                       "filter": self._geo_filter}}
+        q["query"]["bool"]["geo_distance"]["coordinates"] = geo_point
+        return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
     def create(self, datacsv, confDir="../data/"):
         with open(os.path.join(confDir, "es_settings.json")) as jf:
             settings = json.load(jf)
 
-        #self.eserver.create_index(index='geonames', settings=settings)
+        self.eserver.create_index(index='geonames', settings=settings)
         for chunk in bulk_chunks(self._opLoader(datacsv, confDir),
                                  docs_per_chunk=1000):
             self.eserver.bulk(chunk, index='geonames', doc_type='places')
@@ -178,16 +203,14 @@ class ESWrapper(BaseDB):
         with DataReader(datacsv, os.path.join(confDir, 'geonames.conf')) as reader:
             cnt = 0
             for row in reader:
-                row['coordinates'] = [row['longitude'], row['latitude']]
+                row['coordinates'] = [float(row['longitude']), float(row['latitude'])]
                 del(row['latitude'])
                 del(row['longitude'])
                 row['alternatenames'] = row['alternatenames'].split(",")
-                print "inseted"
                 cnt += 1
-                if cnt > 100:
-                    break
-
-                yield self.eserver.index_op(row)
+                #if cnt > 100:
+                    #break
+                yield self.eserver.index_op(row, index="geonames", doc_type="places")
 
 
 class MongoDBWrapper(BaseDB):
@@ -213,7 +236,6 @@ class MongoDBWrapper(BaseDB):
             for l in acsv:
                 row = dict(zip(columns, l.decode('utf-8').lower().split("\t")))
                 admin1[row['key']] = row
-
 
         with open(countryCsv) as ccsv:
             with open(os.path.join(confDir, "geonames_countryInfo.conf")) as t:
