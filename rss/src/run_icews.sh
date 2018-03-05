@@ -1,0 +1,4 @@
+python2 geocode.py --infile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/enricheddata/2004_estoniaLatvia.mjson --outfile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/geocoded/2004_estoniaLatvia.mjson
+python2 geocode.py --infile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/enricheddata/2010GeorgiaKeywords.mjson --outfile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/geocoded/2010GeorgiaKeywords.mjson
+python2 geocode.py --infile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/enricheddata/2010UkraineKeywords.mjson --outfile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/geocoded/2010UkraineKeywords.mjson
+python2 geocode.py --infile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/enricheddata/azerbaijan_keywords.mjson --outfile /home/sathappan/enrichment/ICEWS-Data/jasonSchlachter_data/geocoded/azerbaijan_keywords.mjson

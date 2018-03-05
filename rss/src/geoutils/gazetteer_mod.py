@@ -12,7 +12,7 @@ __version__ = "0.0.1"
 
 # import gevent
 import json
-from .dbManager import SQLiteWrapper, MongoDBWrapper
+from .dbManager import SQLiteWrapper, ESWrapper, MongoDBWrapper
 import pandas as pd
 from . import GeoPoint, encode, blacklist, loc_default, isempty, CountryDB, AdminDB
 # from . import loc_default, blacklist
@@ -20,7 +20,7 @@ from . import GeoPoint, encode, blacklist, loc_default, isempty, CountryDB, Admi
 from pylru import lrudecorator
 import logging
 import os
-import ipdb
+#import ipdb
 
 log = logging.getLogger("rssgeocoder")
 
@@ -40,8 +40,8 @@ class BaseGazetteer(object):
 
 
 class GeoNames(BaseGazetteer):
-    def __init__(self, dbpath, priority=None):
-        self.db = SQLiteWrapper(dbpath)
+    def __init__(self, db, priority=None):
+        self.db = db  # SQLiteWrapper(dbpath)
 
         if priority is None:
             # TODO: Define default priority
@@ -49,12 +49,14 @@ class GeoNames(BaseGazetteer):
         else:
             self.priority = priority
 
+        if isinstance(db, ESWrapper):
+            self._query = self.esquery
+        else:
+            self._query = self.sqlquery
         #self.countries = json.load(open(os.path.join(os.path.dirname(__file__),
         #                                             "countryInfo.json")))
 
-    #@lrudecorator(10000)
-    #@profile
-    def query(self, name, min_popln=0):
+    def esquery(self, name, min_popln=0, **kwargs):
         """
         Search the locations DB for the given name
         params:
@@ -63,6 +65,39 @@ class GeoNames(BaseGazetteer):
         return:
             list of possible locations the input string refers to
         """
+        name = name.strip().lower()
+        if name in loc_default:
+            name = loc_default[name]
+
+        if name in blacklist:
+            return []
+
+        country = self._querycountry(name)
+        if country == []:
+            admin = self._querystate(name)
+            city_alt = self.db.query(name, qtype="combined", query_name="should",
+                                     min_popln=min_popln, **kwargs)
+            #city = self.db.query(name, **kwargs)
+            #alternateNames = self.db.query(name, qtype="relaxed", **kwargs)
+        else:
+            admin, city_alt = [], []
+
+        ldist = (city_alt + country + admin)
+        #return [tmp.__dict__ for tmp in ldist]
+        return ldist
+
+    #@lrudecorator(10000)
+    #@profile
+    def sqlquery(self, name, min_popln=0):
+        """
+        Search the locations DB for the given name
+        params:
+            name - string
+            min_popln - integer
+        return:
+            list of possible locations the input string refers to
+        """
+        name = name.strip().lower()
         if name in loc_default:
             name = loc_default[name]
 
@@ -89,38 +124,66 @@ class GeoNames(BaseGazetteer):
         if ldist == [] and "'" in name:
             log.info('splitting location name on quote mark-{}'.format(encode(name)))
             ldist = self._query_alternatenames(name.split("'", 1)[0])
+        #return [t.__dict__ for t in ldist]
+        return ldist
 
+    @lrudecorator(1000)
+    def query(self, name, min_popln=0, **kwargs):
+        ldist = self._query(name, min_popln=min_popln, **kwargs)
+        ldist = self._get_loc_confidence(ldist, min_popln)
+        return ldist
+
+    def _get_loc_confidence(self, ldist, min_popln):
         if ldist != []:
-            df = pd.DataFrame([i.__dict__ for i in ldist])
-            df.drop_duplicates('geonameid', inplace=True)
-            if df.shape[0] == 1:
-                df['confidence'] = 1.0
-            else:
-                #df['confidence'] = 0.0
+            ldist = {l.geonameid: l for l in ldist}.values()
 
-                #dfcity = df[df.featureClass.str.match('A|P')]
-                #if not dfcity.empty:
-                #    df = dfcity.reindex(copy=True)
-                dfpop = df[df.population > (min_popln + 1)]
-                if not dfpop.empty:
-                    df = dfpop.reindex(copy=True)
-                    try:
-                        df['population'] = (df['population'] + 10).astype(float)
-                    except Exception, e:
-                        raise e
+        popsum = sum([(float(l.population) + 10.0) for l in ldist])
+        rmset = set()
+        for idx, l in enumerate(ldist):
+            if l.featureClass.lower() == "l":
+                rmset.add(idx)
 
-                    #dfn = df[df["ltype"] == "city"]
-                    #if not dfn.empty:
-                    #    df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
-                    #                                                    (2 * (dfn['population'].sum())))
-                    #df['confidence'] += (df['population'] / (2 * df['population'].sum()))
-                    df['confidence'] = (df['population'] / (df['population'].sum()))
-                else:
-                    df['confidence'] = 0.01
+            l.confidence = ((float(l.population) + 10.0)/popsum)  *l._score
 
-            ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
+        if len(rmset) < len(ldist):
+            ldist = [l for idx, l in enumerate(ldist) if idx not in rmset]
+            popsum = sum([(float(l.population) + 10.0) for l in ldist])
+            for l in ldist:
+                l.confidence = ((float(l.population) + 10.0)/popsum) *l._score
 
         return ldist
+
+    #def _get_loc_confidence(self, ldist, min_popln):
+    #    if ldist != []:
+    #        df = pd.DataFrame(ldist)
+    #        df.drop_duplicates('geonameid', inplace=True)
+    #        if df.shape[0] == 1:
+    #            df['confidence'] = 1.0
+    #        else:
+    #            #df['confidence'] = 0.0
+
+    #            #dfcity = df[df.featureClass.str.match('A|P')]
+    #            #if not dfcity.empty:
+    #            #    df = dfcity.reindex(copy=True)
+    #            dfpop = df[df.population > (min_popln + 1)]
+    #            if not dfpop.empty:
+    #                df = dfpop.reindex(copy=True)
+    #                try:
+    #                    df['population'] = (df['population'].astype(int) + 10).astype(float)
+    #                except Exception, e:
+    #                    raise e
+
+    #                #dfn = df[df["ltype"] == "city"]
+    #                #if not dfn.empty:
+    #                #    df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
+    #                #                                                    (2 * (dfn['population'].sum())))
+    #                #df['confidence'] += (df['population'] / (2 * df['population'].sum()))
+    #                df['confidence'] = (df['population'] / (df['population'].sum()))
+    #            else:
+    #                df['confidence'] = 0.01
+
+    #        ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
+    #    return ldist
 
     def _querycountry(self, name):
         """
