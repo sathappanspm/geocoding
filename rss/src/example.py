@@ -11,12 +11,24 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 from geoutils.gazetteer import GeoNames
+from geoutils.dbManager import ESWrapper
+from geocode import BaseGeo
 
-gn = GeoNames("./Geonames_dump.sql", "")
-# with strict =False, only the country and city are matched (no state match is done..)
-print gn.get_locInfo(country="Argentina", admin="", city="buenos aires", strict=False)[0].__dict__
+db = ESWrapper(index_name="geonames", doc_type="places")
+GEO = BaseGeo(db)
 
-print (gn.get_locInfo(country='Mexico', admin="", city=u"Ciudad de México", strict=False)[0].__dict__).__str__().encode("utf-8")
+def tmpfun(doc):
+    try:
+        msg = json.loads(doc)
+        msg = GEO.annotate(msg)
+        return msg
+    except:
+        print("error")
 
+
+with open(infile) as inf:
+    for ln in inf:
+        j = json.loads(ln)
+        tmpfun(doc)
 
 
