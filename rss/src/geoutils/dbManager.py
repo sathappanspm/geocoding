@@ -192,7 +192,6 @@ class ESWrapper(BaseDB):
         qtype values are exact, relaxed or geo_distance
         Always limit results to 10
         """
-        #q = deepcopy(self._base_query)
         q = {"query": {"bool": {}}}
         query_name = kwargs.pop('query_name', 'must')
         query_name = "should"
@@ -200,9 +199,6 @@ class ESWrapper(BaseDB):
             q["query"]["bool"]["minimum_number_should_match"] = 1
 
         maincondition = {}
-        cond = []
-        ## use match_phrase if qkey contains multiple words
-
         if qtype == "exact":
             maincondition["match"] = {"name.raw": {"query": qkey}}
             if analyzer:
@@ -215,48 +211,29 @@ class ESWrapper(BaseDB):
 
             #q["query"]["bool"][query_name]["match"].pop("name.raw", "")
         elif qtype == "combined":
-            if False and analyzer:
-                maincondition = [{"match": {"name": {"query": qkey, "analyzer": analyzer}}},
-                        {"match": {"asciiname": {"query": qkey, "analyzer": analyzer}}},
-                        {"match": {"alternatenames": {"query": qkey, "analyzer": analyzer}}}]
-            else:
-                #maincondition = [{"term": {"name.raw": qkey}},
-                #                 {"term": {"asciiname": qkey}},
-                #                 {"term": {"alternatenames": qkey}},
-                #                 {"match": {"asciiname": {"query": qkey,
-                #                     "analyzer": "standard"}}},
-                #                 {"match": {"alternatenames": {"query": qkey,
-                #                     "analyzer": "standard"}}},
-                #                 {"match": {"name": {"query": qkey,
-                #                     "analyzer": "standard"}}}
-                #                ]
-                #maincondition = {"multi_match": {"query": qkey,
-                #                                 "fields": ["name", "asciiname",
-                #                                            "alternatenames"],
-                #                                 "type": "best_fields",
-                #                                 "tie_breaker": 0.2}}
-                maincondition = [
-             {"bool": {"must": {"multi_match": {"query": qkey, "fields": ["name", "asciiname", "alternatenames"]}},
-                       "filter": {"bool": {"should": [{"range": {"population": {"gte": 5000}}},
+            maincondition = [
+                {"bool": {"must": {"multi_match": {"query": qkey, "fields": ["name.raw", "asciiname", "alternatenames"]}},
+                           "filter": {"bool": {"should": [{"range": {"population": {"gte": 5000}}},
                                                       {"terms": {"featureCode": ["pcla", "pcli", "cont",
                                                                                  "rgn", "admd", "adm1", "adm2"]}}]}}}},
+                 #{"multi_match": {"query": qkey, "fields": ["name.raw", "asciiname.raw", "alternatenames"]}}
+                 #{"bool": {"should": [{"term": {"name.raw": {"value": "qkey"}}},
+                 #                  {"term": {"asciiname.raw": {"value": "qkey"}}},
+                 #                  {"term": {"alternatenames": {"value": "qkey"}}}]}}
+                 
+                 {"term": {"name.raw": {"value": qkey}}},
+                 {"term": {"asciiname.raw": {"value": qkey}}},
+                 {"term": {"alternatenames": {"value": qkey[1:]}}},
+                 {"match": {"alternatenames": {"query": qkey,
+                                               'fuzziness': kwargs.get("fuzzy", 0),
+                                               "max_expansions": kwargs.get("max_expansion", 5),
+                                               "prefix_length": kwargs.get("prefix_length", 1)}}}
 
-             {"term": {"name.raw": {"value": qkey, "boost":2.0}}},
-             {"term": {"asciiname": {"value": qkey, "boost":2.0}}},
-             {"term": {"alternatenames": {"value": qkey, "boost":2.0}}}
-
-          ]
-                #print "here", analyzer
-                if analyzer:
-                    maincondition[0]["bool"]["must"]["multi_match"]["analyzer"] = analyzer
-
+              ]
+            
         if maincondition:
-            cond.append(maincondition)
-            #else:
             q["query"]["bool"][query_name] = maincondition
-
             if min_popln:
-                #q['query']['bool']['filter'] = {'range': {'population': {'gte': 5000}}}
                 if kwargs:
                     filter_cond = [{"range": {"population": {"gte": min_popln}}}]
                     filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
@@ -267,8 +244,6 @@ class ESWrapper(BaseDB):
 
                     q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
 
-        #q['sort'] = {"population": {'order': "desc"}}
-        #print(q)
         return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
     def query(self, qkey, min_popln=None, **kwargs):

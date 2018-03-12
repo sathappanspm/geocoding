@@ -38,7 +38,7 @@ class BaseGeo(object):
                 "ORGANIZATION": 0.5
                 }
 
-    def geocode(self, doc=None, loclist=None):
+    def geocode(self, doc=None, loclist=None, **kwargs):
         locTexts = []
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
@@ -51,9 +51,9 @@ class BaseGeo(object):
 
         results = self.get_locations_fromURL((doc["url"] if doc.get("url", "")
                                               else doc.get("link", "")))
-        return self.geocode_fromList(locTexts, results)
+        return self.geocode_fromList(locTexts, results, **kwargs)
 
-    def geocode_fromList(self, locTexts, results=None, min_popln=None):
+    def geocode_fromList(self, locTexts, results=None, min_popln=None, **kwargs):
         if results is None:
             results = {}
 
@@ -65,6 +65,8 @@ class BaseGeo(object):
             if isinstance(l, tuple):
                 itype[l[0]] = l[1]
                 l = l[0]
+            else:
+                itype[l] = 'LOCATION'
             try:
                 if l in results:
                     results[l].frequency += 1
@@ -77,12 +79,14 @@ class BaseGeo(object):
                             results[sub].frequency += 1
                         else:
                             itype[sub] = itype[l]
-                            results[sub] = LocationDistribution(self.gazetteer.query(sub, min_popln=min_popln))
+                            results[sub] = LocationDistribution(self.gazetteer.query(sub, min_popln=min_popln, **kwargs))
                             results[sub].frequency = 1
+                            #print(sub, len(results[sub].realizations))
                     #else:
                     #    results[l] = LocationDistribution(q)
                     #    results[l].frequency = 1
-            except:
+            except UnicodeDecodeError as e:
+                #print("error", str(e))
                 log.exception("Unable to make query for string - {}".format(encode(l)))
 
         scores = self.score(results)

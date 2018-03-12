@@ -17,6 +17,7 @@ import pandas as pd
 from . import GeoPoint, encode, blacklist, loc_default, isempty, CountryDB, AdminDB
 # from . import loc_default, blacklist
 # from . import isempty
+from .loc_config import reduce_stopwords
 from pylru import lrudecorator
 import logging
 import os
@@ -71,7 +72,11 @@ class GeoNames(BaseGazetteer):
 
         if name in blacklist:
             return []
-
+        
+        if 'reduce' in kwargs and kwargs['reduce'] is True:
+            name = reduce_stopwords(name)
+            kwargs.pop("reduce")
+            
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name)
