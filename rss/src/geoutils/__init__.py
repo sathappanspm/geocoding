@@ -17,7 +17,7 @@ from .loc_config import loc_default, blacklist
 from collections import defaultdict
 import logging
 import json
-#import ipdb
+import ipdb
 
 log = logging.getLogger("__init__")
 FEATURE_MAP = {"A": "region", "H": "water body",
@@ -123,7 +123,11 @@ class COUNTRY_INFO(dict):
             return []
 
     def fromISO(self, code):
-        return self.code2name[code.upper()]
+        code = code.upper()
+        if code in self.code2name:
+            return self.code2name[code]
+
+        return None
 
 
 class ADMIN2_INFO(dict):

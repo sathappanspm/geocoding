@@ -10,20 +10,22 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-#import ipdb
 from workerpool import WorkerPool
 from geoutils.gazetteer_mod import GeoNames
-from geoutils.dbManager import SQLiteWrapper, ESWrapper
-#from geoutils.gazetteer import GeoNames
+from geoutils.dbManager import ESWrapper
 from collections import defaultdict
 from urlparse import urlparse
-#from urllib.parse import urlparse
 from geoutils import LocationDistribution
 import logging
 from geoutils import encode, isempty
 import json
+import ipdb
 
-
+tracer = logging.getLogger('elasticsearch')
+tracer.setLevel(logging.CRITICAL)  # or desired level
+tracer = logging.getLogger('urllib3')
+tracer.setLevel(logging.CRITICAL)  # or desired level
+# tracer.addHandler(logging.FileHandler('indexer.log'))
 logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
 log = logging.getLogger("rssgeocoder")
 
@@ -33,16 +35,19 @@ class BaseGeo(object):
         self.gazetteer = GeoNames(db)
         self.min_popln = min_popln
         self.min_length = min_length
-        self.weightage = {"LOCATION": 1.0,
-                "NATIONALITY": 0.75,
-                "ORGANIZATION": 0.5
-                }
+        self.weightage = {
+            "LOCATION": 1.0,
+            "NATIONALITY": 0.75,
+            "ORGANIZATION": 0.5,
+            "OTHER": 0.5
+        }
 
     def geocode(self, doc=None, loclist=None, **kwargs):
         locTexts = []
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
-            locTexts += [(l['expr'].lower(), l['neType']) for l in doc["BasisEnrichment"]["entities"]
+            locTexts += [(l['expr'].lower(), l['neType']) for l in
+                         doc["BasisEnrichment"]["entities"]
                          if ((l["neType"] in ("LOCATION")) and
                              len(l['expr']) >= self.min_length)]
 
@@ -71,22 +76,20 @@ class BaseGeo(object):
                 if l in results:
                     results[l].frequency += 1
                 else:
-                    #q = self.gazetteer.query(l, min_popln=min_popln)
-                    #if not q:
                     for sub in l.split(","):
                         sub = sub.strip()
                         if sub in results:
                             results[sub].frequency += 1
                         else:
                             itype[sub] = itype[l]
-                            results[sub] = LocationDistribution(self.gazetteer.query(sub, min_popln=min_popln, **kwargs))
+                            try:
+                                results[sub] = LocationDistribution(self.gazetteer.query(sub,
+                                                                                     min_popln=min_popln,
+                                                                                     **kwargs))
+                            except UnicodeDecodeError:
+                                ipdb.set_trace()
                             results[sub].frequency = 1
-                            #print(sub, len(results[sub].realizations))
-                    #else:
-                    #    results[l] = LocationDistribution(q)
-                    #    results[l].frequency = 1
-            except UnicodeDecodeError as e:
-                #print("error", str(e))
+            except UnicodeDecodeError:
                 log.exception("Unable to make query for string - {}".format(encode(l)))
 
         scores = self.score(results)
@@ -94,10 +97,9 @@ class BaseGeo(object):
                                    key=lambda y: y['score'])
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
-        #ipdb.set_trace()
-        total_weight = sum([self.weightage[itype[key]] for key in lmap])
-        return lmap, max(lmap.items(), key=lambda x: x[1]['score'] * self.weightage[itype[x[0]]] / total_weight)[1]['geo_point'] if scores else {}
-        #return lmap, max(lmap.values(), key=lambda x: x['score'])['geo_point'] if scores else {}
+        total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap])
+        return lmap, max(lmap.items(),
+                         key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
 
     def get_locations_fromURL(self, url):
         """
@@ -131,13 +133,13 @@ class BaseGeo(object):
                     results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
         return results
 
-    def annotate(self, doc):
+    def annotate(self, doc, **kwargs):
         """
         Attach embersGeoCode to document
         """
         try:
-            lmap, gp = self.geocode(doc=doc)
-        except Exception as e:
+            lmap, gp = self.geocode(doc=doc, **kwargs)
+        except UnicodeDecodeError as e:
             log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
 
@@ -393,19 +395,19 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    wp = WorkerPool(infile, outfile, tmpfun, 200)
-    wp.run()
-    #for l in infile:
-    #    try:
-    #        j = json.loads(l)
-    #        j = geo.annotate(j)
-    #        #log.debug("geocoded line no:{}, {}".format(lno,
-    #        #                                           encode(j.get("link", ""))))
-    #        lno += 1
-    #        outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-    #    except:
-    #        log.exception("Unable to readline")
-    #        continue
+    #wp = WorkerPool(infile, outfile, tmpfun, 200)
+    #wp.run()
+    for l in infile:
+        try:
+            j = json.loads(l)
+            j = GEO.annotate(j)
+            #log.debug("geocoded line no:{}, {}".format(lno,
+            #                                           encode(j.get("link", ""))))
+            lno += 1
+            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+        except UnicodeEncodeError:
+            log.exception("Unable to readline")
+            continue
 
     if not args.cat:
         infile.close()

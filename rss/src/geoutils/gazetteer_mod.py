@@ -72,11 +72,11 @@ class GeoNames(BaseGazetteer):
 
         if name in blacklist:
             return []
-        
+
         if 'reduce' in kwargs and kwargs['reduce'] is True:
             name = reduce_stopwords(name)
             kwargs.pop("reduce")
-            
+
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name)
@@ -352,12 +352,19 @@ class GeoNames(BaseGazetteer):
         return self.db.query(stmt, (locId,))
 
     def get_country(self, cc2):
-        res = self.db.query("""SELECT *, 'country' as 'ltype' FROM
-                            allcountries where ISO=?""", (cc2,))
-        for l in res:
-            l.confidence = 0.50
+        gpt = CountryDB.fromISO(cc2)
+        if gpt is not None:
+            gpt = [GeoPoint(**gpt)]
+        else:
+            gpt = []
 
-        return res
+        return gpt
+        # res = self.db.query("""SELECT *, 'country' as 'ltype' FROM
+        #                     allcountries where ISO=?""", (cc2,))
+        # for l in res:
+        #     l.confidence = 0.50
+
+        # return res
 
 
 class MOD_GeoNames(BaseGazetteer):
