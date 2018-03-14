@@ -73,10 +73,6 @@ class GeoNames(BaseGazetteer):
         if name in blacklist:
             return []
 
-        if 'reduce' in kwargs and kwargs['reduce'] is True:
-            name = reduce_stopwords(name)
-            kwargs.pop("reduce")
-
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name)
@@ -110,18 +106,10 @@ class GeoNames(BaseGazetteer):
             return []
 
         country = self._querycountry(name)
-        #admin = self._querystate(name)
-        #city = self._querycity(name, min_popln=min_popln)
-        #alternateNames = self._query_alternatenames(name, min_popln)
         if country == []:
             admin = self._querystate(name)
             city = self._querycity(name)
             alternateNames = self._query_alternatenames(name)
-            #g1 = gevent.spawn(self._querystate, name)
-            #g2 = gevent.spawn(self._querycity, name, min_popln=min_popln)
-            #g3 = gevent.spawn(self._query_alternatenames, name, min_popln)
-            #gevent.joinall([g1, g2, g3])
-            #admin, city, alternateNames = g1.value, g2.value, g3.value
         else:
             admin, city, alternateNames = [], [], []
 
@@ -129,19 +117,28 @@ class GeoNames(BaseGazetteer):
         if ldist == [] and "'" in name:
             log.info('splitting location name on quote mark-{}'.format(encode(name)))
             ldist = self._query_alternatenames(name.split("'", 1)[0])
-        #return [t.__dict__ for t in ldist]
+
         return ldist
 
     @lrudecorator(1000)
     def query(self, name, min_popln=0, **kwargs):
         ldist = self._query(name, min_popln=min_popln, **kwargs)
         ldist = self._get_loc_confidence(ldist, min_popln)
+
+        if ldist == [] and kwargs.get('reduce', False):
+            name = reduce_stopwords(name)
+            kwargs.pop("reduce")
+            ldist = self.query(name, min_popln=min_popln, **kwargs)
+
         return ldist
 
     def _get_loc_confidence(self, ldist, min_popln):
-        if ldist != []:
-            ldist = {l.geonameid: l for l in ldist}.values()
+        # if ldist != []:
+            # ldist = {l.geonameid: l for l in ldist}.values()
+            # ldist = [max(ldist, key=lambda x: x.population)]
+            # ldist[0].confidence = 1.0
 
+        # return ldist
         popsum = sum([(float(l.population) + 10.0) for l in ldist])
         rmset = set()
         for idx, l in enumerate(ldist):
@@ -158,68 +155,17 @@ class GeoNames(BaseGazetteer):
 
         return ldist
 
-    #def _get_loc_confidence(self, ldist, min_popln):
-    #    if ldist != []:
-    #        df = pd.DataFrame(ldist)
-    #        df.drop_duplicates('geonameid', inplace=True)
-    #        if df.shape[0] == 1:
-    #            df['confidence'] = 1.0
-    #        else:
-    #            #df['confidence'] = 0.0
-
-    #            #dfcity = df[df.featureClass.str.match('A|P')]
-    #            #if not dfcity.empty:
-    #            #    df = dfcity.reindex(copy=True)
-    #            dfpop = df[df.population > (min_popln + 1)]
-    #            if not dfpop.empty:
-    #                df = dfpop.reindex(copy=True)
-    #                try:
-    #                    df['population'] = (df['population'].astype(int) + 10).astype(float)
-    #                except Exception, e:
-    #                    raise e
-
-    #                #dfn = df[df["ltype"] == "city"]
-    #                #if not dfn.empty:
-    #                #    df.loc[df['ltype'] == 'city', 'confidence'] += ((dfn['population']) /
-    #                #                                                    (2 * (dfn['population'].sum())))
-    #                #df['confidence'] += (df['population'] / (2 * df['population'].sum()))
-    #                df['confidence'] = (df['population'] / (df['population'].sum()))
-    #            else:
-    #                df['confidence'] = 0.01
-
-    #        ldist = [GeoPoint(**d) for d in df.to_dict(orient='records')]
-    #    return ldist
-
     def _querycountry(self, name):
         """
         Check if name is a country name
         """
         return [GeoPoint(**l) for l in CountryDB.query(name)]
-        #if name in self.countries:
-        #    return [GeoPoint(**self.countries[name])]
-        #else:
-        #    return []
-        #return self.db.query(u"""SELECT a.*, 'country' as 'ltype', c.population
-        #                     FROM allcountries as a
-        #                     INNER JOIN alternatenames as b ON a.geonameid=b.geonameid
-        #                     INNER JOIN allcities as c ON a.geonameid=c.id
-        #                     WHERE
-        #                     (country=? OR b.alternatename=?) LIMIT 1""", (name, name))
 
     def _querystate(self, name):
         """
         Check if name is an admin name
         """
         return [GeoPoint(**l) for l in AdminDB.query(name)]
-        #stmt = u"""SELECT a.geonameid, a.name as 'admin1', b.country as 'country',
-        #           'admin1' as 'ltype', 'ADM1' as 'featureCOde', 'A' as 'featureClass',
-        #           b.ISO as 'countryCode', c.population
-        #           FROM allcountries as b INNER JOIN alladmins as a on
-        #           substr(a.key, 0, 3)=b.ISO
-        #           INNER JOIN allcities as c ON c.id=a.geonameid
-        #           WHERE (a.name=? or a.asciiname=?)
-        #           """
-        #return self.db.query(stmt, (name, name))
 
     def _querycity(self, name):
         """
@@ -231,7 +177,6 @@ class GeoNames(BaseGazetteer):
                FROM allcities WHERE
                (name=? or asciiname=?) and featureClass != ""
                """
-               #(a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P") and
         res = self.db.query(stmt, (name, name))
         return res
 
@@ -247,13 +192,10 @@ class GeoNames(BaseGazetteer):
                 WHERE
                 d.alternatename=? and a.featureClass != ""
                 """
-                #(a.featureCOde="ADM2" or a.featureCOde="ADM3" or a.featureClass="P")
-
         res = self.db.query(stmt, (name,))
         return res
 
     def normalize_statenames(self, country, admin):
-        # get unofficial state name
         stmt = """ SELECT b.asciiname, c.country FROM allcities AS a INNER JOIN allcountries as c
                ON a.countryCode=c.ISO INNER JOIN alladmins as b
                ON b.geonameid=a.id
@@ -274,42 +216,47 @@ class GeoNames(BaseGazetteer):
         return full loc tuple of name, admin1 name, country, population,
         longitude etc.
         """
-        if city and (city.lower() == "ciudad de mexico" or city.lower() == u"ciudad de méxico"):
-            city = "mexico city"
+        pts = self._query(city)
+        pts = [p for p in pts if p.country.lower() == country.lower() 
+               and p.featureCode in ("pcla", "pcli", "adm1", "adm2", "admd")]
+        
+        return pts
+        # if city and (city.lower() == "ciudad de mexico" or city.lower() == u"ciudad de méxico"):
+        #     city = "mexico city"
 
-        if not isempty(admin):
-            admin = self.normalize_statenames(country, admin)
+        # if not isempty(admin):
+        #     admin = self.normalize_statenames(country, admin)
 
-        stmt = u"""SELECT a.id as geonameid, a.name,
-               a.population,a.latitude, a.longitude, c.country as 'country',
-               b.name as 'admin1', a.featureClass,
-               a.featureCOde, a.countryCode as 'countryCode'
-               FROM allcities a
-               INNER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
-               INNER JOIN allcountries c ON a.countryCode=c.ISO
-               WHERE """
+        # stmt = u"""SELECT a.id as geonameid, a.name,
+        #        a.population,a.latitude, a.longitude, c.country as 'country',
+        #        b.name as 'admin1', a.featureClass,
+        #        a.featureCOde, a.countryCode as 'countryCode'
+        #        FROM allcities a
+        #        INNER JOIN alladmins b ON a.countryCode||"."||a.admin1 = b.key
+        #        INNER JOIN allcountries c ON a.countryCode=c.ISO
+        #        WHERE """
 
-        if isempty(city) and isempty(admin):
-            stmt += u"""c.country=? ORDER BY a.population DESC LIMIT 1"""
-            params = (country,)
+        # if isempty(city) and isempty(admin):
+        #     stmt += u"""c.country=? ORDER BY a.population DESC LIMIT 1"""
+        #     params = (country,)
 
-        elif isempty(city):
-            stmt += u""" a.featureCOde == "ADM1" and (b.name=? or b.asciiname=?)
-                    and c.country=? ORDER BY a.population DESC LIMIT 1"""
-            params = (admin, admin, country)
-        else:
-            stmt += u""" (a.name=? or a.asciiname=?) and
-                         (b.name=? or b.asciiname=?) and
-                         c.country=?
-                         ORDER BY a.population DESC LIMIT 1"""
+        # elif isempty(city):
+        #     stmt += u""" a.featureCOde == "ADM1" and (b.name=? or b.asciiname=?)
+        #             and c.country=? ORDER BY a.population DESC LIMIT 1"""
+        #     params = (admin, admin, country)
+        # else:
+        #     stmt += u""" (a.name=? or a.asciiname=?) and
+        #                  (b.name=? or b.asciiname=?) and
+        #                  c.country=?
+        #                  ORDER BY a.population DESC LIMIT 1"""
 
-            params = (city, city, admin, admin, country)
+        #     params = (city, city, admin, admin, country)
 
-        res = self.db.query(stmt, params)
-        if res == []:
-            res = self._get_locInfo_from_alternate(country=country, admin=admin, city=city)
+        # res = self.db.query(stmt, params)
+        # if res == []:
+        #     res = self._get_locInfo_from_alternate(country=country, admin=admin, city=city)
 
-        return res
+        # return res
 
     def _get_locInfo_from_alternate(self, country=None, admin=None, city=None):
         stmt = u"""SELECT DISTINCT a.id as geonameid, a.name,
@@ -359,12 +306,6 @@ class GeoNames(BaseGazetteer):
             gpt = []
 
         return gpt
-        # res = self.db.query("""SELECT *, 'country' as 'ltype' FROM
-        #                     allcountries where ISO=?""", (cc2,))
-        # for l in res:
-        #     l.confidence = 0.50
-
-        # return res
 
 
 class MOD_GeoNames(BaseGazetteer):
