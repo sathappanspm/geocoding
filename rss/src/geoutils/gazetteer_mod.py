@@ -122,12 +122,13 @@ class GeoNames(BaseGazetteer):
 
     @lrudecorator(1000)
     def query(self, name, min_popln=0, **kwargs):
+        reduceFlag = kwargs.pop('reduce', False)
         ldist = self._query(name, min_popln=min_popln, **kwargs)
         ldist = self._get_loc_confidence(ldist, min_popln)
 
-        if ldist == [] and kwargs.get('reduce', False):
+        if ldist == [] and reduceFlag:
             name = reduce_stopwords(name)
-            kwargs.pop("reduce")
+            # kwargs.pop("reduce")
             ldist = self.query(name, min_popln=min_popln, **kwargs)
 
         return ldist

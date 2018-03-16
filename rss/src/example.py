@@ -10,46 +10,82 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
+from workerpool import WorkerPool
 from geoutils.dbManager import ESWrapper
 from geocode import BaseGeo
 import json
+import ipdb
 
-db = ESWrapper(index_name="geonames", doc_type="places",
-               host="http://9899c246ngrok.io",
-               port=80)
+db = ESWrapper(index_name="geonames", doc_type="places")
+               #host="http://9899c246ngrok.io",
+               #port=80)
 
 GEO = BaseGeo(db)
 
 
-def tmpfun(doc):
+def tmpfun(doc, reduce=False, fuzzy=0, prefix_length=0):
     try:
         msg = json.loads(doc)
-        msg = GEO.annotate(msg, reduce=True, fuzzy=1,
-                           prefix_length=1,
-                           max_expansions=10)
-
-        # reduce=True,   causes the input string to be cleaned/normalized (removal
-        #                of stopwords and some more)
-        #
-        # fuzzy=1,       can take values (0, 1, 2). 0 means no fuzziness, 1 means
-        #                fuzzy search with 1 edit distance and 2 means allow fuzzy
-        #                search with 2 edit distances
-        #
-        # prefix_length, this argument is valid only with fuzzy=(1 or 2). This
-        #                controls the number of expansions allowed for
-        #                fuzziness. Lower the value more number of expansions
-        #                possible and thus is more time consuming
-        #
-        # max_expansions, this argument is valid only fuzzy. This controls the
-        #                 maximum number of expansions allowed for a string
-
+        msg = GEO.annotate(msg, reduce=reduce, fuzzy=fuzzy, prefix_length=prefix_length)
         return msg
-    except KeyError as e:
+    except UnicodeEncodeError as e:
         print(str(e))
+        ipdb.set_trace()
         print("error")
 
 
-with open("./test.txt") as inf:
-    for ln in inf:
-        # j = json.loads(ln)
-        print(tmpfun(ln)['embersGeoCode'])
+def encode(s):
+    try:
+        return s.encode("utf-8")
+    except:
+        pass
+    return s
+
+if __name__ == "__main__":
+    import sys
+    import argparse
+    from geoutils import smart_open
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cat", "-c", action='store_true',
+                        default=False, help="read from stdin")
+    parser.add_argument("--reduce", "-r", action='store_true',
+                        default=False, help="read from stdin")
+    parser.add_argument("-f", "--fuzzy", type=int, default=0, help="fuzzy inputs")
+    parser.add_argument("-p", "--prefix", type=int, default=1, help="prefix lenght")
+    parser.add_argument("-i", "--infile", type=str, help="input file")
+    parser.add_argument("-o", "--outfile", type=str, help="output file")
+    args = parser.parse_args()
+
+    db = ESWrapper(index_name="geonames", doc_type="places")
+    GEO = BaseGeo(db)
+
+    if args.cat:
+        infile = sys.stdin
+        outfile = sys.stdout
+    else:
+        infile = smart_open(args.infile)
+        outfile = smart_open(args.outfile, "wb")
+
+    lno = 0
+    from functools import partial
+    partfunc = partial(tmpfun, reduce=args.reduce, fuzzy=args.fuzzy, prefix_length=args.prefix)
+    # wp = WorkerPool(infile, outfile, partfunc, 500)
+    # wp.run()
+    for l in infile:
+        try:
+            #j = json.loads(l)
+            #j = GEO.annotate(j)
+            j=partfunc(l)
+            #log.debug("geocoded line no:{}, {}".format(lno,
+            #                                           encode(j.get("link", ""))))
+            lno += 1
+            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+            if lno > 100:
+                break
+        except UnicodeEncodeError:
+            log.exception("Unable to readline")
+            continue
+
+    if not args.cat:
+        infile.close()
+        outfile.close()

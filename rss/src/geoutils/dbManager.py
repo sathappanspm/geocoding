@@ -6,7 +6,7 @@
     Last Modified:
 """
 
-#import ipdb
+import ipdb
 #import csv as unicodecsv
 import unicodecsv
 import sqlite3
@@ -225,24 +225,43 @@ class ESWrapper(BaseDB):
                  {"term": {"asciiname.raw": {"value": qkey}}},
                  {"term": {"alternatenames": {"value": qkey[1:]}}},
                  {"match": {"alternatenames": {"query": qkey,
-                                               'fuzziness': kwargs.get("fuzzy", 0),
-                                               "max_expansions": kwargs.get("max_expansion", 5),
-                                               "prefix_length": kwargs.get("prefix_length", 1)}}}
+                                               'fuzziness': kwargs.pop("fuzzy", 0),
+                                               "max_expansions": kwargs.pop("max_expansion", 5),
+                                               "prefix_length": kwargs.pop("prefix_length", 1)}}}
 
               ]
             
         if maincondition:
             q["query"]["bool"][query_name] = maincondition
-            if min_popln:
-                if kwargs:
-                    filter_cond = [{"range": {"population": {"gte": min_popln}}}]
-                    filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
-                    q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
-                else:
-                    filter_cond = [{"range": {"population": {"gte": min_popln}}},
-                                   {"terms": {"featureCode": ["ppla", "pplx"]}}]
 
-                    q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
+            if min_popln:
+                filter_cond = [{"range": {"population": {"gte": min_popln}}}]
+            else:
+                filter_cond = []
+            
+            if kwargs:
+                #filter_cond = [{"range": {"population": {"gte": min_popln}}}]
+                filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
+                print(filter_cond)
+                q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
+            elif min_popln:
+                filter_cond = [{"range": {"population": {"gte": min_popln}}},
+                                {"terms": {"featureCode": ["ppla", "pplx"]}}]
+
+                q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
+
+
+
+            #if min_popln:
+            #    if kwargs:
+            #        filter_cond = [{"range": {"population": {"gte": min_popln}}}]
+            #        filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
+            #        q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
+            #    else:
+            #        filter_cond = [{"range": {"population": {"gte": min_popln}}},
+            #                       {"terms": {"featureCode": ["ppla", "pplx"]}}]
+
+            #        q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
 
         return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
@@ -253,6 +272,11 @@ class ESWrapper(BaseDB):
         max_score =  res['max_score']#sum([r['_score'] for r in res])
         #for t in res:
         gps = []
+        if max_score == 0.0:
+            ## no results were obtained by elasticsearch instead it returned a random/very
+            ## low scoring one
+            res['hits'] = []
+        
         for t in res['hits']:
             t['_source']['geonameid'] = t["_source"]["id"]
             #t['_source']['_score'] = t[1] / max_score

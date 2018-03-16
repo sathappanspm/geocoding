@@ -48,14 +48,19 @@ class BaseGeo(object):
             # Get all location entities from document with atleast min_length characters
             locTexts += [(l['expr'].lower(), l['neType']) for l in
                          doc["BasisEnrichment"]["entities"]
-                         if ((l["neType"] in ("LOCATION")) and
+                         if ((l["neType"] in ("LOCATION",)) and
                              len(l['expr']) >= self.min_length)]
 
+            locTexts += [(l['expr'].lower(), 'OTHER') for l in
+                         doc['BasisEnrichment']['nounPhrases']]
+        
         if loclist is not None:
             locTexts += [l.lower() for l in loclist]
 
         results = self.get_locations_fromURL((doc["url"] if doc.get("url", "")
                                               else doc.get("link", "")))
+        # results = {}
+        # kwargs['analyzer'] = 'standard'
         return self.geocode_fromList(locTexts, results, **kwargs)
 
     def geocode_fromList(self, locTexts, results=None, min_popln=None, **kwargs):
@@ -126,7 +131,7 @@ class BaseGeo(object):
                     results["URL-DOMAIN_{}".format(urlcountry)] = LocationDistribution(urlcountry)
                     results["URL-DOMAIN_{}".format(urlcountry)].frequency = 1
 
-            if self.min_length < len(urlsubject) < 20:
+            if 5 < len(urlsubject) < 20:
                 usubj_q = self.gazetteer.query(urlsubject, 15000)
                 if usubj_q:
                     results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
@@ -363,8 +368,6 @@ class TextGeo(object):
         return ns
 
 
-db = ESWrapper(index_name="geonames", doc_type="places")
-GEO = BaseGeo(db)
 def tmpfun(doc):
     try:
         msg = json.loads(doc)
@@ -384,9 +387,10 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
-    #db = SQLiteWrapper(dbpath="./geoutils/GN_dump_20160407.sql")
-    #db = ESWrapper(index_name="geonames", doc_type="places")
-    #geo = BaseGeo(db)
+
+    db = ESWrapper(index_name="geonames", doc_type="places")
+    GEO = BaseGeo(db)
+
     if args.cat:
         infile = sys.stdin
         outfile = sys.stdout
@@ -395,19 +399,19 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    #wp = WorkerPool(infile, outfile, tmpfun, 200)
-    #wp.run()
-    for l in infile:
-        try:
-            j = json.loads(l)
-            j = GEO.annotate(j)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-        except UnicodeEncodeError:
-            log.exception("Unable to readline")
-            continue
+    wp = WorkerPool(infile, outfile, tmpfun, 200)
+    wp.run()
+    # for l in infile:
+    #     try:
+    #         j = json.loads(l)
+    #         j = GEO.annotate(j)
+    #         #log.debug("geocoded line no:{}, {}".format(lno,
+    #         #                                           encode(j.get("link", ""))))
+    #         lno += 1
+    #         outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+    #     except UnicodeEncodeError:
+    #         log.exception("Unable to readline")
+    #         continue
 
     if not args.cat:
         infile.close()

@@ -114,6 +114,8 @@ class COUNTRY_INFO(dict):
 
         #data = {l['country'].lower(): l for l in self.code2name.viewvalues()}
         data = {l['country'].lower(): l for l in self.code2name.values()}
+        data['palestine'] = data['palestinian territory']
+        data['united states of america'] = data['united states']
         super(COUNTRY_INFO, self).__init__(data)
 
     def query(self, name):
