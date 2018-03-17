@@ -20,7 +20,9 @@ import logging
 from geoutils import encode, isempty
 import json
 import ipdb
+import re
 
+numstrip=re.compile("\d")
 tracer = logging.getLogger('elasticsearch')
 tracer.setLevel(logging.CRITICAL)  # or desired level
 tracer = logging.getLogger('urllib3')
@@ -46,12 +48,12 @@ class BaseGeo(object):
         locTexts = []
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
-            locTexts += [(l['expr'].lower(), l['neType']) for l in
+            locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), l['neType']) for l in
                          doc["BasisEnrichment"]["entities"]
-                         if ((l["neType"] in ("LOCATION",)) and
+                         if ((l["neType"] in ("LOCATION", "NATIONALITY", "ORGANIZATION")) and
                              len(l['expr']) >= self.min_length)]
 
-            locTexts += [(l['expr'].lower(), 'OTHER') for l in
+            locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
                          doc['BasisEnrichment']['nounPhrases']]
         
         if loclist is not None:
@@ -72,6 +74,8 @@ class BaseGeo(object):
 
         itype = {}
         for l in locTexts:
+            if l == "":
+                continue
             if isinstance(l, tuple):
                 itype[l[0]] = l[1]
                 l = l[0]
