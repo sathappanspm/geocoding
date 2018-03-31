@@ -1,0 +1,48 @@
+{
+    "settings" : {
+        "number_of_shards" : 5,
+        "number_of_replicas" : 1,
+    "analysis": {
+        "filter": {
+            "tokenlength": {"type":"length", "min":"5"}
+        },
+        "analyzer":{
+            "tokenLengthAnalyzer":{
+                "filter":["tokenlength"],
+                "tokenizer":"standard"}
+        }
+    }
+    },
+    "mappings" : {
+       "places" : {
+        "properties" : {
+          "id" : {"type" : "integer"},
+          "name" : {"type" : "text", "fields": {"raw": {"type": "keyword", "index": "not_analyzed"}}},
+          "asciiname" : {"type" : "text", "fields": {"raw": {"type": "string", "index": "not_analyzed"}}},
+          "alternatenames" : {"index": "not_analyzed", "type": "keyword"},
+          "coordinates" : {"type" : "geo_point"},
+          "featureClass" :  {"type" : "text", "index": "not_analyzed"},
+          "featureCode" : {"type" : "text", "index": "not_analyzed"},
+          "countryCode" : {"type" : "text", "index": "not_analyzed"},
+          "cc2" :  {"type" : "keyword"},
+          "admin1" : {"type": "text",
+                      "index":  "not_analyzed"},
+          "admin2" : {"type": "text",
+                      "index":  "not_analyzed"},
+          "admin3" : {"type": "text",
+                      "index":  "not_analyzed"},
+          "admin4" : {"type": "text",
+                      "index":  "not_analyzed"},
+          "population" : {"type" :  "long"},
+          "elevation" : {"type" :  "long"},
+          "dem" : {"type":  "long",
+                   "index": "not_analyzed"},
+          "timzeone" :  {"type" : "text",
+                         "index":  "not_analyzed"},
+          "modification_date" : {"type" : "date",
+                                 "format": "date",
+                                 "index": "not_analyzed"}
+          }
+       }
+   }
+}
