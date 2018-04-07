@@ -15,6 +15,7 @@ from . import GeoPoint, blacklist, loc_default, CountryDB, AdminDB
 from .loc_config import reduce_stopwords
 from pylru import lrudecorator
 import logging
+import ipdb
 
 log = logging.getLogger("rssgeocoder")
 
@@ -148,10 +149,11 @@ class GeoNames(BaseGazetteer):
         # ipdb.set_trace()
         if admin not in (None, '', '-'):
             admin = admin.lower()
-            admins = self.db.query(admin, featureCode='adm1', qtype='exact',
+            admins = self.db.query(admin, qtype='exact',
                                    countryCode=countrycode.lower())
             if pts != []:
-                adms = [l.admin1 for l in admins]
+                adms = [l.admin1 for l in admins
+                        if l.featureCode in ('adm1', 'ppla')]
                 pts = [p for p in pts if p.admin1 in adms]
             else:
                 pts = admins
