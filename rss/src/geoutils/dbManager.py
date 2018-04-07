@@ -15,7 +15,6 @@ import sys
 import os
 # from time import sleep
 from . import GeoPoint, safe_convert, isempty
-from pymongo import MongoClient
 import json
 from pyelasticsearch import bulk_chunks, ElasticSearch
 import gzip
@@ -36,11 +35,6 @@ sqltypemap = {'char': unicode,
               'FLOAT': float, 'varchar': unicode
               }
 
-#sqltypemap = {'char': str,
-#              'BIGINT': int,
-#              'text': str, 'INT': int,
-#              'FLOAT': float, 'varchar': str
-#              }
 
 class BaseDB(object):
     def __init__(self, dbpath):
@@ -216,11 +210,6 @@ class ESWrapper(BaseDB):
                            "filter": {"bool": {"should": [{"range": {"population": {"gte": 5000}}},
                                                       {"terms": {"featureCode": ["pcla", "pcli", "cont",
                                                                                  "rgn", "admd", "adm1", "adm2"]}}]}}}},
-                 #{"multi_match": {"query": qkey, "fields": ["name.raw", "asciiname.raw", "alternatenames"]}}
-                 #{"bool": {"should": [{"term": {"name.raw": {"value": "qkey"}}},
-                 #                  {"term": {"asciiname.raw": {"value": "qkey"}}},
-                 #                  {"term": {"alternatenames": {"value": "qkey"}}}]}}
-                 
                  {"term": {"name.raw": {"value": qkey}}},
                  {"term": {"asciiname.raw": {"value": qkey}}},
                  {"term": {"alternatenames": {"value": qkey[1:]}}},
@@ -230,7 +219,7 @@ class ESWrapper(BaseDB):
                                                "prefix_length": kwargs.pop("prefix_length", 1)}}}
 
               ]
-            
+
         if maincondition:
             q["query"]["bool"][query_name] = maincondition
 
@@ -238,30 +227,17 @@ class ESWrapper(BaseDB):
                 filter_cond = [{"range": {"population": {"gte": min_popln}}}]
             else:
                 filter_cond = []
-            
+
             if kwargs:
                 #filter_cond = [{"range": {"population": {"gte": min_popln}}}]
                 filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
-                print(filter_cond)
+                # print(filter_cond)
                 q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
             elif min_popln:
                 filter_cond = [{"range": {"population": {"gte": min_popln}}},
                                 {"terms": {"featureCode": ["ppla", "pplx"]}}]
 
                 q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
-
-
-
-            #if min_popln:
-            #    if kwargs:
-            #        filter_cond = [{"range": {"population": {"gte": min_popln}}}]
-            #        filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
-            #        q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
-            #    else:
-            #        filter_cond = [{"range": {"population": {"gte": min_popln}}},
-            #                       {"terms": {"featureCode": ["ppla", "pplx"]}}]
-
-            #        q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
 
         return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
@@ -276,7 +252,7 @@ class ESWrapper(BaseDB):
             ## no results were obtained by elasticsearch instead it returned a random/very
             ## low scoring one
             res['hits'] = []
-        
+
         for t in res['hits']:
             t['_source']['geonameid'] = t["_source"]["id"]
             #t['_source']['_score'] = t[1] / max_score
@@ -287,12 +263,7 @@ class ESWrapper(BaseDB):
                 break
 
             gps.append(pt)
-            #t['_source']['_score'] = (min(float(len(t['_source']['name'])),float(len(qkey)))
-                                      #/max(float(len(t['_source']['name'])),float(len(qkey))))
-            #t['_source']['_score'] = min(t["_source"]["_score"], t['_score'] / max_score)
 
-        #return [GeoPoint(**t['_source']) for t in res]
-        #gps = [GeoPoint(**t['_source']) for t in res['hits']]
         if len(gps) == 1:
             gps[0]._score = (min(float(len(gps[0].name)),float(len(qkey)))
                                 /max(float(len(gps[0].name)),float(len(qkey))))
@@ -300,38 +271,6 @@ class ESWrapper(BaseDB):
         return gps
 
     def near_geo(self, geo_point, min_popln=5000, **kwargs):
-        #q2 = {
-        #    "query": {
-        #        "function_score": {
-        #            "query": {
-        #                "bool": {
-        #                    "should":[
-        #                        {
-        #                            "match": {
-        #                                "featureCode": "ppl"
-        #                                }
-        #                        },
-        #                        {
-        #                            "match": {"featureCode": "pcli"}
-        #                        }
-        #                        ]
-        #            }
-        #        },
-        #            "functions": [
-        #                {
-        #                    "linear": {
-        #                        "coordinates": {
-        #                            "origin": geo_point,
-        #                            "scale":  "10km"
-        #                        }
-        #                    }
-        #                }
-        #            ],
-        #            "boost_mode": "replace"
-        #        }
-        #    }
-        #}
-
         q2 = {"query": {"bool" : {"must" : {"match_all" : {}},
                                  "filter" : [{
                                      "geo_distance" : {
@@ -397,105 +336,6 @@ class ESWrapper(BaseDB):
                 except:
                     print json.dumps(row)
                     continue
-
-
-class MongoDBWrapper(BaseDB):
-    def __init__(self, dbname, coll_name, host='localhost', port=12345):
-        self.client = MongoClient(host, port)
-        self.db = self.client[dbname]
-        self.collection = self.db[coll_name]
-
-    def query(self, stmt, items=[], limit=None):
-        if limit:
-            res = self.collection.find(stmt + {it: 1 for it in items}).limit(limit)
-        else:
-            res = self.collection.find(stmt + {it: 1 for it in items})
-
-        return [GeoPoint(**d) for d in res]
-
-    def create(self, cityCsv, admin1csv, admin2csv, countryCsv, confDir="../../data/"):
-        with open(admin1csv) as acsv:
-            with open(os.path.join(confDir, "geonames_admin1.conf")) as t:
-                columns = [l.split(" ", 1)[0] for l in json.load(t)['columns']]
-
-            admin1 = {}
-            for l in acsv:
-                row = dict(zip(columns, l.decode('utf-8').lower().split("\t")))
-                admin1[row['key']] = row
-
-        with open(countryCsv) as ccsv:
-            with open(os.path.join(confDir, "geonames_countryInfo.conf")) as t:
-                columns = [l.split(" ", 1)[0] for l in json.load(t)['columns']]
-
-            countryInfo = {}
-            for l in ccsv:
-                row = dict(zip(columns, l.lower().decode('utf-8').split("\t")))
-                countryInfo[row['ISO']] = row
-
-        with open(admin2csv) as acsv:
-            with open(os.path.join(confDir, "geonames_admin1.conf")) as t:
-                columns = [l.split(" ", 1)[0] for l in json.load(t)['columns']]
-
-            admin2 = {}
-            for l in acsv:
-                row = dict(zip(columns, l.decode('utf-8').lower().split("\t")))
-                admin2[row['key']] = row
-
-        with open(cityCsv) as ccsv:
-            with open(os.path.join(confDir, "geonames.conf")) as t:
-                conf = json.load(t)
-                columns = [l.split(" ", 1)[0] for l in conf['columns']]
-                coltypes = dict(zip(columns,
-                                    [l.split(" ", 2)[1].split("(", 1)[0] for l in conf['columns']]))
-
-            for l in ccsv:
-                row = dict(zip(columns, l.decode("utf-8").lower().split("\t")))
-
-                akey = row['countryCode'] + "." + row['admin1']
-                if row['admin1'] == "00":
-                    ad1_details = {}
-                else:
-                    try:
-                        ad1_details = admin1[akey]
-                    except:
-                        print akey
-                        ad1_details = {}
-
-                if not isempty(row['admin2']):
-                    try:
-                        ad2_details = (admin2[akey + "." + row["admin2"]])
-                    except:
-                        ad2_details = {}
-                else:
-                    ad2_details = {}
-
-                if row['countryCode'] != 'YU':
-                    try:
-                        country_name = countryInfo[row['countryCode']]
-                    except:
-                        country_name = {'country': None, 'ISO3': None, 'continent': None}
-                else:
-                    country_name = {'country': 'Yugoslavia', 'ISO3': "YUG", "continent": 'Europe'}
-
-                for c in row:
-                    row[c] = safe_convert(row[c], sqltypemap[coltypes[c]], None)
-
-                if row['alternatenames']:
-                    row['alternatenames'] = row['alternatenames'].split(",")
-
-                row['country'] = country_name['country']
-                row['continent'] = country_name['continent']
-                row['countryCode_ISO3'] = country_name['ISO3']
-                row['admin1'] = ad1_details.get('name', "")
-                row['admin1_asciiname'] = ad1_details.get('asciiname', "")
-                row['admin2'] = ad2_details.get('name', "")
-                rkeys = row.keys()
-                row['coordinates'] = [row['longitude'], row['latitude']]
-                for c in rkeys:
-                    if isempty(row[c]):
-                        del(row[c])
-
-                self.collection.insert(row)
 
 
 def main(args):

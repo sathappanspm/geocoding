@@ -16,7 +16,7 @@ import ipdb
 
 from geoutils.dbManager import ESWrapper
 db = ESWrapper('geonames', 'places')
-#db.create("./gnames_gaz/allCountries.txt")
+db.create("./gnames_gaz/allCountries.txt")
 
 
 def create(admin1csv, admin2csv, countryCsv, confDir="../data/"):
