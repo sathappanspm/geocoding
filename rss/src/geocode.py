@@ -10,66 +10,95 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-#import ipdb
+from workerpool import WorkerPool
 from geoutils.gazetteer_mod import GeoNames
-#from geoutils.gazetteer import GeoNames
+from geoutils.dbManager import ESWrapper
 from collections import defaultdict
 from urlparse import urlparse
 from geoutils import LocationDistribution
 import logging
 from geoutils import encode, isempty
+import json
+import ipdb
+import re
 
-
+numstrip=re.compile("\d")
+tracer = logging.getLogger('elasticsearch')
+tracer.setLevel(logging.CRITICAL)  # or desired level
+tracer = logging.getLogger('urllib3')
+tracer.setLevel(logging.CRITICAL)  # or desired level
+# tracer.addHandler(logging.FileHandler('indexer.log'))
 logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
 log = logging.getLogger("rssgeocoder")
 
 
 class BaseGeo(object):
-    def __init__(self, dbpath="./Geonames_dump.sql", min_popln=0, min_length=1):
-        self.gazetteer = GeoNames(dbpath)
+    def __init__(self, db, min_popln=0, min_length=1):
+        self.gazetteer = GeoNames(db)
         self.min_popln = min_popln
         self.min_length = min_length
+        self.weightage = {
+            "LOCATION": 1.0,
+            "NATIONALITY": 0.75,
+            "ORGANIZATION": 0.5,
+            "OTHER": 0.2
+        }
 
-    def geocode(self, doc=None, loclist=None):
+    def geocode(self, doc=None, loclist=None, **kwargs):
         locTexts = []
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
-            locTexts += [l['expr'].lower() for l in doc["BasisEnrichment"]["entities"]
-                         if ((l["neType"] == "LOCATION") and
+            locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), l['neType']) for l in
+                         doc["BasisEnrichment"]["entities"]
+                         if ((l["neType"] in ("LOCATION", "NATIONALITY")) and
                              len(l['expr']) >= self.min_length)]
+
+            # locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
+                         # doc['BasisEnrichment']['nounPhrases']]
 
         if loclist is not None:
             locTexts += [l.lower() for l in loclist]
 
         results = self.get_locations_fromURL((doc["url"] if doc.get("url", "")
                                               else doc.get("link", "")))
-        return self.geocode_fromList(locTexts, results)
+        # results = {}
+        # kwargs['analyzer'] = 'standard'
+        return self.geocode_fromList(locTexts, results, **kwargs)
 
-    def geocode_fromList(self, locTexts, results=None, min_popln=None):
+    def geocode_fromList(self, locTexts, results=None, min_popln=None, **kwargs):
         if results is None:
             results = {}
 
         if min_popln is None:
             min_popln = self.min_popln
 
+        itype = {}
         for l in locTexts:
+            if l == "":
+                continue
+            if isinstance(l, tuple):
+                itype[l[0]] = l[1]
+                l = l[0]
+            else:
+                itype[l] = 'LOCATION'
             try:
                 if l in results:
                     results[l].frequency += 1
                 else:
-                    q = self.gazetteer.query(l, min_popln=min_popln)
-                    if not q:
-                        for sub in l.split(","):
-                            sub = sub.strip()
-                            if sub in results:
-                                results[sub].frequency += 1
-                            else:
-                                results[sub] = LocationDistribution(self.gazetteer.query(sub, min_popln=min_popln))
-                                results[sub].frequency = 1
-                    else:
-                        results[l] = LocationDistribution(q)
-                        results[l].frequency = 1
-            except:
+                    for sub in l.split(","):
+                        sub = sub.strip()
+                        if sub in results:
+                            results[sub].frequency += 1
+                        else:
+                            itype[sub] = itype[l]
+                            try:
+                                results[sub] = LocationDistribution(self.gazetteer.query(sub,
+                                                                                     min_popln=min_popln,
+                                                                                     **kwargs))
+                            except UnicodeDecodeError:
+                                ipdb.set_trace()
+                            results[sub].frequency = 1
+            except UnicodeDecodeError:
                 log.exception("Unable to make query for string - {}".format(encode(l)))
 
         scores = self.score(results)
@@ -77,8 +106,9 @@ class BaseGeo(object):
                                    key=lambda y: y['score'])
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
-        #ipdb.set_trace()
-        return lmap, max(lmap.values(), key=lambda x: x['score'])['geo_point'] if scores else {}
+        total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap])
+        return lmap, max(lmap.items(),
+                         key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
 
     def get_locations_fromURL(self, url):
         """
@@ -105,20 +135,20 @@ class BaseGeo(object):
                     results["URL-DOMAIN_{}".format(urlcountry)] = LocationDistribution(urlcountry)
                     results["URL-DOMAIN_{}".format(urlcountry)].frequency = 1
 
-            if self.min_length < len(urlsubject) < 20:
+            if 5 < len(urlsubject) < 20:
                 usubj_q = self.gazetteer.query(urlsubject, 15000)
                 if usubj_q:
                     results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
                     results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
         return results
 
-    def annotate(self, doc):
+    def annotate(self, doc, **kwargs):
         """
         Attach embersGeoCode to document
         """
         try:
-            lmap, gp = self.geocode(doc=doc)
-        except Exception, e:
+            lmap, gp = self.geocode(doc=doc, **kwargs)
+        except UnicodeDecodeError as e:
             log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
 
@@ -342,10 +372,18 @@ class TextGeo(object):
         return ns
 
 
+def tmpfun(doc):
+    try:
+        msg = json.loads(doc)
+        msg = GEO.annotate(msg)
+        return msg
+    except:
+        print("error")
+
+
 if __name__ == "__main__":
     import sys
     import argparse
-    import json
     from geoutils import smart_open
     parser = argparse.ArgumentParser()
     parser.add_argument("--cat", "-c", action='store_true',
@@ -353,7 +391,10 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
-    geo = BaseGeo(dbpath="./geoutils/GN_dump_20160407.sql", min_length=3)
+
+    db = ESWrapper(index_name="geonames", doc_type="places")
+    GEO = BaseGeo(db)
+
     if args.cat:
         infile = sys.stdin
         outfile = sys.stdout
@@ -362,18 +403,19 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-
-    for l in infile:
-        try:
-            j = json.loads(l)
-            j = geo.annotate(j)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False)) + "\n")
-        except:
-            log.exception("Unable to readline")
-            continue
+    wp = WorkerPool(infile, outfile, tmpfun, 200)
+    wp.run()
+    # for l in infile:
+    #     try:
+    #         j = json.loads(l)
+    #         j = GEO.annotate(j)
+    #         #log.debug("geocoded line no:{}, {}".format(lno,
+    #         #                                           encode(j.get("link", ""))))
+    #         lno += 1
+    #         outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+    #     except UnicodeEncodeError:
+    #         log.exception("Unable to readline")
+    #         continue
 
     if not args.cat:
         infile.close()
