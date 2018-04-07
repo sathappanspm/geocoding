@@ -41,7 +41,7 @@ class BaseGeo(object):
             "LOCATION": 1.0,
             "NATIONALITY": 0.75,
             "ORGANIZATION": 0.5,
-            "OTHER": 0.5
+            "OTHER": 0.2
         }
 
     def geocode(self, doc=None, loclist=None, **kwargs):
@@ -55,7 +55,7 @@ class BaseGeo(object):
 
             locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
                          doc['BasisEnrichment']['nounPhrases']]
-        
+
         if loclist is not None:
             locTexts += [l.lower() for l in loclist]
 
