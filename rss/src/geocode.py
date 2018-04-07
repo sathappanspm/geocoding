@@ -50,11 +50,11 @@ class BaseGeo(object):
             # Get all location entities from document with atleast min_length characters
             locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), l['neType']) for l in
                          doc["BasisEnrichment"]["entities"]
-                         if ((l["neType"] in ("LOCATION", "NATIONALITY", "ORGANIZATION")) and
+                         if ((l["neType"] in ("LOCATION", "NATIONALITY")) and
                              len(l['expr']) >= self.min_length)]
 
-            locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
-                         doc['BasisEnrichment']['nounPhrases']]
+            # locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
+                         # doc['BasisEnrichment']['nounPhrases']]
 
         if loclist is not None:
             locTexts += [l.lower() for l in loclist]
