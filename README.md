@@ -1,18 +1,3 @@
-# Twitter Geocoder
-
-Location information in  a tweet can be found in the following places
-
-* Twitter Coordinates: Coordinates are reverse geocoded to a **\<country, state, city\>** tuple by finding the most populous city or second/third administrative division within **30km** of it. Note: This expansion is accepted with a confidence of 1.0
-
-* Twitter Places: The country information extracted from this field agrees with the twitter coordinates field around **92%** times.
-* User Location: The country information obtained from this field agrees with the coordinates field for about **95%** times. All words in this field is used for matching. No filtering based on word length is done for this field.
-* User description: Matches with coordinates for about **14.5%** times. Also only words with length greater than 3 is used for matching.
-* Tweet Body/Text: Only words with length ggreater than 3 are used for matching.Country extracted from tweet text matches with coordinates only for about **7%** times.
-
-* Retweet User Location: Matches **57%** times.
-* Retweet User Description: Matches **16.7%** times.
-
-
 ### Matching text with geonames gazetteer
 1. An ElasticSearch server containing the geonames gazetteer is used for this purpose.
 2. Only locations with population greater than 5000 or considered to be an administrative division (first, second or third order) or section of a populated city is used for matching.
@@ -32,7 +17,22 @@ The final summed up scores for each country, state or city is then used to pick 
 Finally, the geo-focus of the tweet is obtained by finding the location with maximum score. The score here is the product of location confidence (as described above)  and field confidence. The field confidence score is the percentage times a location extracted from that field matches with location extracted from twitter coordinates field at the country level.
 
 
-##### Evaluation
+# Twitter Geocoder
+
+Location information in  a tweet can be found in the following places
+
+* Twitter Coordinates: Coordinates are reverse geocoded to a **\<country, state, city\>** tuple by finding the most populous city or second/third administrative division within **30km** of it. Note: This expansion is accepted with a confidence of 1.0
+
+* Twitter Places: The country information extracted from this field agrees with the twitter coordinates field around **92%** times.
+* User Location: The country information obtained from this field agrees with the coordinates field for about **95%** times. All words in this field is used for matching. No filtering based on word length is done for this field.
+* User description: Matches with coordinates for about **14.5%** times. Also only words with length greater than 3 is used for matching.
+* Tweet Body/Text: Only words with length ggreater than 3 are used for matching.Country extracted from tweet text matches with coordinates only for about **7%** times.
+
+* Retweet User Location: Matches **57%** times.
+* Retweet User Description: Matches **16.7%** times.
+
+
+##### Twitter Geocoding Evaluation Results (last updated Sept 5, 2017)
 
 1. Comparison with current embers-geocoder.
              
