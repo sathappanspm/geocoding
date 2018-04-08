@@ -8,7 +8,7 @@ Python source code - @todo
 import gevent.monkey
 #gevent.monkey.patch_all()
 
-from etool import logs
+import logging
 import time
 # import gevent
 from gevent.coros import BoundedSemaphore
@@ -21,7 +21,7 @@ __version__ = '0.0.1'
 
 
 __processor__ = 'workerpool'
-log = logs.getLogger(__processor__)
+log = logging.getLogger(__processor__)
 
 
 class WorkerPool(object):

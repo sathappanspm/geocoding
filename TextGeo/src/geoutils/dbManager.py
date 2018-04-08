@@ -194,7 +194,10 @@ class ESWrapper(BaseDB):
 
         maincondition = {}
         if qtype == "exact":
-            maincondition["match"] = {"name.raw": {"query": qkey}}
+            maincondition = [{"term": {"name.raw": {"value": qkey}}},
+                             {"term": {"asciiname.raw": {"value": qkey}}},
+                             {"term": {"alternatenames": {"value": qkey}}}
+                             ]
             if analyzer:
                 maincondition["match"]["name.raw"]["analyzer"] = analyzer
 
