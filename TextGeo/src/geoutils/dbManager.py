@@ -198,6 +198,7 @@ class ESWrapper(BaseDB):
                              {"term": {"asciiname.raw": {"value": qkey}}},
                              {"term": {"alternatenames": {"value": qkey}}}
                              ]
+            #maincondition["match"] = {"name.raw": {"query": qkey}}
             if analyzer:
                 maincondition["match"]["name.raw"]["analyzer"] = analyzer
 

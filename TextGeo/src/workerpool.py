@@ -11,7 +11,7 @@ import gevent.monkey
 import logging
 import time
 # import gevent
-from gevent.coros import BoundedSemaphore
+from gevent.lock import BoundedSemaphore
 from gevent.pool import Pool
 import json
 
