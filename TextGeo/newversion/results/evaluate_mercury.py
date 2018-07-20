@@ -10,9 +10,8 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 import sys
-# sys.path.append('../../src/')
 sys.path.append('../')
-
+# sys.path.append('../')
 from geocode import BaseGeo
 from geoutils.dbManager import ESWrapper
 from geoutils import geodistance
@@ -20,7 +19,7 @@ import json
 import ipdb
 
 
-def equals(loc1, loc2):
+def _equals(loc1, loc2):
     co, st, ci = 0, 0, 0
     if loc1 == {} or loc2 == {}:
         return co, st, ci
@@ -36,16 +35,29 @@ def equals(loc1, loc2):
 
     return co, st, ci
 
+def equals(loc1, locations):
+    #co, st, ci = _equals(loc1, locations)
+    co, st, ci = 0, 0, 0 #_equals(loc1, locations)
+    for l in locations:
+        if 'geo_point' in l:
+            l = l['geo_point']
+
+        c1, st1, ci1 = _equals(loc1, l)
+        co = (co or c1)
+        st = (st or st1)
+        ci = (ci or ci1)
+    return co, st, ci
 
 def get_groundTruthInfo(loc, geo):
     info = geo.gazetteer.get_locInfo(country=loc['Country'], admin=loc['State'], city=loc['City'])
-    if len(info) > 1:
-        # ipdb.set_trace()
-        info2 = [l for l in info if l['ltype'] == 'city']
-        if len(info2) != 0:
-            info = info2
-            #ipdb.set_trace()
-
+    #if len(info) > 1:
+    #   # ipdb.set_trace()
+    #    info2 = [l for l in info if l['ltype'] == 'city']
+    #    if len(info2) != 0:
+    #        info = info2
+    #        #ipdb.set_trace()
+    if info == []:
+        ipdb.set_trace()
     return info[0]
 
 
@@ -55,6 +67,7 @@ def main(args):
     distance_perf = {'country': 0, 'state': 0, 'city': 0}
     db = ESWrapper('geonames', 'places')
     geo = BaseGeo(db, 'Uniform')
+    linec = 0
     with open(args.infile) as inf:
         num_evts = 0
         empty = 0
@@ -64,11 +77,20 @@ def main(args):
                 empty += 1
                 continue
 
+            linec += 1
+            if linec > 1000:
+                break
             num_evts += 1
             co, st, ci = 0, 0, 0
             trueloc = {"country": msg['events'][0]['Country'], 'admin1': msg['events'][0]['State'] or '',
                        'city': msg['events'][0]['City'] or ''}
-            co, st, ci = equals(trueloc, msg['embersGeoCode'])
+            # co, st, ci = equals(trueloc, msg['location_distribution'].values())
+            if args.all:
+                co, st, ci = equals(trueloc, msg['location_distribution'].values())
+            else:
+                co, st, ci = equals(trueloc, [msg['embersGeoCode']])
+
+            # co, st, ci = equals(trueloc, msg['embersGeoCode'])
             normal_perf['country'] += co
             normal_perf['state'] += st
             normal_perf['city'] += ci
@@ -78,11 +100,15 @@ def main(args):
                 msg['groundTruth'] = get_groundTruthInfo(msg['events'][0], geo)
             except Exception as e:
                 # ipdb.set_trace()
-                # print(str(e))
+                print(str(e))
                 print(trueloc), msg['events'][0]['Latitude'], msg['events'][0]['Longitude']
                 msg['groundTruth'] = trueloc
 
-            co, st, ci = equals(msg['groundTruth'], msg['embersGeoCode'])
+            if args.all:
+                co, st, ci = equals(trueloc, msg['location_distribution'].values())
+            else:
+                co, st, ci = equals(trueloc, [msg['embersGeoCode']])
+
             geonames_perf['country'] += co
             geonames_perf['state'] += st
             geonames_perf['city'] += ci
@@ -123,5 +149,6 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--infile", default='sina_geocoded_protest.json')
+    ap.add_argument("--all", action='store_true', default=False)
     args = ap.parse_args()
     main(args)

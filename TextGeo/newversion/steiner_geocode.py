@@ -20,12 +20,23 @@ from networkx.algorithms import approximation
 from geoutils import encode, isempty
 import json
 from collections import defaultdict
+import logging
+
+
+tracer = logging.getLogger('elasticsearch')
+tracer.setLevel(logging.CRITICAL)  # or desired level
+tracer = logging.getLogger('urllib3')
+tracer.setLevel(logging.CRITICAL)  # or desired level
+# tracer.addHandler(logging.FileHandler('indexer.log'))
+logging.basicConfig(filename='steinerGeo.log', level=logging.DEBUG)
+log = logging.getLogger("root")
 
 
 numstrip = re.compile("\d")
 
 FEATURE_WEIGHTS = {'adm1': 2, 'adm2': 3, 'adm3': 4, 'adm4': 4, 'ppla2': 4, 'ppla': 3,
                    'adm5': 4, 'pcli': 1, 'ppla3': 4, 'pplc': 3, 'ppl': 8, 'cont': 1}
+
 
 class SteinerGeo():
     def __init__(self, db):
@@ -122,10 +133,12 @@ class SteinerGeo():
             if locmap[loc]['resolved'] is False:
                 subres = self.gazetteer.query(loc, countryCode=countryFilter, fuzzy='AUTO')
                 new_exp = {res.geonameid: res for res in subres}
-                locmap[loc]['expansions'].update(new_exp)
+                if new_exp:
+                    # locmap[loc]['expansions'].update(new_exp)
+                    locmap[loc]['expansions'] = (new_exp)
 
         for org in orgChecklist:
-            subres = self.gazetteer.query(org, countryCode=countryFilter, fuzzy='AUTO')
+            subres = self.gazetteer.query(org, countryCode=countryFilter)
             locmap[org] = {"expansions": {res.geonameid: res for res in subres},
                            "resolved": len(subres) == 1,
                            "count": orgChecklist[org]
@@ -166,7 +179,7 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    wp = WorkerPool(infile, outfile, tmpfun, 200)
+    wp = WorkerPool(infile, outfile, tmpfun, 200, limit=1000)
     wp.run()
     #for l in infile:
     #    tmpfun(l)

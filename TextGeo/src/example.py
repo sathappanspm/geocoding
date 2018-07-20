@@ -69,22 +69,22 @@ if __name__ == "__main__":
     lno = 0
     from functools import partial
     partfunc = partial(tmpfun, reduce=args.reduce, fuzzy=args.fuzzy, prefix_length=args.prefix)
-    # wp = WorkerPool(infile, outfile, partfunc, 500)
-    # wp.run()
-    for l in infile:
-        try:
-            #j = json.loads(l)
-            #j = GEO.annotate(j)
-            j=partfunc(l)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-            if lno > 100:
-                break
-        except UnicodeEncodeError:
-            log.exception("Unable to readline")
-            continue
+    wp = WorkerPool(infile, outfile, partfunc, 500)
+    wp.run()
+    #for l in infile:
+    #    try:
+    #        #j = json.loads(l)
+    #        #j = GEO.annotate(j)
+    #        j=partfunc(l)
+    #        #log.debug("geocoded line no:{}, {}".format(lno,
+    #        #                                           encode(j.get("link", ""))))
+    #        lno += 1
+    #        outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+    #        if lno > 100:
+    #            break
+    #    except UnicodeEncodeError:
+    #        log.exception("Unable to readline")
+    #        continue
 
     if not args.cat:
         infile.close()

@@ -11,7 +11,7 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 from workerpool import WorkerPool
-from geoutils.gazetteer_mod import GeoNames
+from geoutils.gazetteer_mod import GeoNames, Gazetteer
 from geoutils.dbManager import ESWrapper
 from collections import defaultdict
 from urlparse import urlparse
@@ -34,6 +34,7 @@ log = logging.getLogger("rssgeocoder")
 
 class BaseGeo(object):
     def __init__(self, db, confMethod, min_popln=0, escore=True, min_length=1):
+        # self.gazetteer = Gazetteer(db, confMethod=confMethod, escore=escore)
         self.gazetteer = GeoNames(db, confMethod=confMethod, escore=escore)
         self.min_popln = min_popln
         self.min_length = min_length
@@ -136,7 +137,7 @@ class BaseGeo(object):
                     results["URL-DOMAIN_{}".format(urlcountry)].frequency = 1
 
             if 5 < len(urlsubject) < 20:
-                usubj_q = self.gazetteer.query(urlsubject, 15000)
+                usubj_q = self.gazetteer.query(urlsubject, min_popln=15000)
                 if usubj_q:
                     results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
                     results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
@@ -377,7 +378,9 @@ def tmpfun(doc):
         msg = json.loads(doc)
         msg = GEO.annotate(msg)
         return msg
-    except:
+    except Exception as e:
+        print(e)
+        log.exception(e)
         print("error")
 
 
@@ -394,6 +397,7 @@ if __name__ == "__main__":
                         default='population')
     parser.add_argument('-ne', '--noElasticSearchScore', action='store_true', default=False,
                         help='do not use elasticsearch score')
+    parser.add_argument('--test', action='store_true', default=False)
     args = parser.parse_args()
 
     db = ESWrapper(index_name="geonames", doc_type="places")
@@ -407,19 +411,22 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    wp = WorkerPool(infile, outfile, tmpfun, 200)
-    wp.run()
-    # for l in infile:
-    #     try:
-    #         j = json.loads(l)
-    #         j = GEO.annotate(j)
-    #         #log.debug("geocoded line no:{}, {}".format(lno,
-    #         #                                           encode(j.get("link", ""))))
-    #         lno += 1
-    #         outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-    #     except UnicodeEncodeError:
-    #         log.exception("Unable to readline")
-    #         continue
+    if args.test is False:
+        wp = WorkerPool(infile, outfile, tmpfun, 200, limit=1000)
+        wp.run()
+    else:
+
+        for l in infile:
+            try:
+                j = json.loads(l)
+                j = GEO.annotate(j)
+                #log.debug("geocoded line no:{}, {}".format(lno,
+                #                                           encode(j.get("link", ""))))
+                lno += 1
+                outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+            except UnicodeEncodeError:
+                log.exception("Unable to readline")
+                continue
 
     if not args.cat:
         infile.close()

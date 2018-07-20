@@ -9,6 +9,8 @@ country
 government
 president
 citizen
+countryside
+center
 to
 إلى
 ميناء

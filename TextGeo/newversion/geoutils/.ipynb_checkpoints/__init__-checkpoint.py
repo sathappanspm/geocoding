@@ -17,13 +17,17 @@ from .loc_config import loc_default, blacklist
 from collections import defaultdict
 import logging
 import json
-import ipdb
+import numpy as np
 
 log = logging.getLogger("__init__")
-FEATURE_MAP = {"A": "region", "H": "water body",
+FEATURE_MAP = {"A": "administrative region", "H": "water body",
                "L": "area", "R": "road", "S": "Building",
                "T": "mountain", "U": "undersea", "V": "forest",
                "P": "city", "": "Unknown"}
+
+FEATURE_CLASS_RANK = {"A": 1, "P": 2, "V": 5, "H": 5, "T": 5, "L":6, "R": 6, "S": 9, "": 10}
+FEATURE_WEIGHTS = {'adm1': 0.8, 'adm2': 0.7, 'adm3': 0.6, 'adm4': 0.5, 'ppla2': 0.6, 'ppla': 0.7,
+                   'adm5': 0.4, 'pcli': 1.0, 'ppla3': 0.5, 'pplc': 0.3, 'ppl': 0.2, 'cont': 1.0}
 
 
 def safe_convert(obj, ctype, default=None):
@@ -58,9 +62,22 @@ def decode(s):
     except:
         return s
 
+
+def geodistance(pt1, pt2):
+    # assumes input format is [(lon, lat)..]
+    pts_1 = np.radians(np.array(pt1 if isinstance(pt1, list) else [pt1]))
+    pts_2 = np.radians(np.array(pt2 if isinstance(pt2, list) else [pt2]))
+    dlon = pts_1[:, 0][:, np.newaxis] - pts_2[:, 0]
+    dlat = pts_1[:, 1][:, np.newaxis] - pts_2[:, 1]
+
+    dist = (np.sin(dlat / 2.0) ** 2 + np.cos(pts_1[:, 1])[:, np.newaxis] *
+            np.cos(pts_2[:, 1]) * np.sin(dlon / 2.0) ** 2)
+    dist = 2 * np.arcsin(np.sqrt(dist))
+    km = dist * 6367
+    return km
+
+
 # code from smart_open package https://github.com/piskvorky/smart_open
-
-
 def make_closing(base, **attrs):
     """
     Add support for `with Base(attrs) as fout:` to the base class if it's missing.
@@ -112,7 +129,6 @@ class COUNTRY_INFO(dict):
         with open(path) as inf:
             self.code2name = json.load(inf)
 
-        #data = {l['country'].lower(): l for l in self.code2name.viewvalues()}
         data = {l['country'].lower(): l for l in self.code2name.values()}
         data['palestine'] = data['palestinian territory']
         data['united states of america'] = data['united states']
@@ -170,22 +186,40 @@ class ADMIN_INFO(dict):
         with open(path) as inf:
             code2name = json.load(inf)
 
-            #data = {val['name'].lower(): val for val in code2name.viewvalues()}
-            #data.update({val['asciiname'].lower(): val for val in code2name.viewvalues()})
-
-            data = {val['name'].lower(): val for val in code2name.values()}
-            data.update({val['asciiname'].lower(): val for val in code2name.values()})
-
-            #code2name = {}
-            #for l in dd:
-            #    l['ltype'] = 'admin1'
-            #    print l
-            #    data[l['name'].lower()] = l
-            #    #data[l['admin1_ascii'].lower()] = l
-            #    data[l['asciiname'].lower()] = l
-            #    code2name[l['key']] = l
-
         self.code2name = code2name
+        if 'BH.18' not in self.code2name:
+            self.code2name['BH.18'] = {'_score': 0.5789473684210527,
+                                       'admin1': u'central governorate',
+                                       'admin2': '',
+                                       'admin3': u'',
+                                       'admin4': u'',
+                                       'alternatenames': [u'central governorate',
+                                                          u'al muhafazah al wusta',
+                                                          u'al mu\u1e29\u0101faz\u0327ah al wus\u0163\xe1',
+                                                          u'almhafzt alwsty',
+                                                          u'\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629 \u0627\u0644\u0648\u0633\u0637\u0649'],
+                                       'asciiname': u'central governorate',
+                                       'cc2': u'',
+                                       'city': '',
+                                       'confidence': 0.5789473684210527,
+                                       'coordinates': [50.56667, 26.16667],
+                                       'country': u'Bahrain',
+                                       'countryCode': u'bh',
+                                       'dem': u'6',
+                                       'elevation': -1,
+                                       'featureClass': u'a',
+                                       'featureCode': u'adm1h',
+                                       'geonameid': u'7090973',
+                                       'id': u'7090973',
+                                       'ltype': 'admin1',
+                                       'modificationDate': u'2017-03-21',
+                                       'name': u'central governorate',
+                                       'population': 0,
+                                       'timezone': u'asia/bahrain',
+                                       'key': 'bh.18'}
+
+        data = {val['name'].lower(): val for val in code2name.values()}
+        data.update({val['asciiname'].lower(): val for val in code2name.values()})
         super(ADMIN_INFO, self).__init__(data)
 
     def query(self, name):
@@ -217,30 +251,25 @@ class GeoPoint(GeoData):
         if 'geonameid' not in kwargs:
             kwargs['geonameid'] = kwargs.pop('id')
 
-        #self.city, self.admin1, self.country = '', '', ''
         ltype = self._get_ltype(kwargs)
 
         self.ltype = ltype
         self.city = ""
         self._score = kwargs.pop("_score", 1.0)
-        # log.info("{}-ltype-{}".format(encode(self.city), kwargs.get('featureCOde', '')))
-        #assert kwargs.get('featureClass', 'A') in ("P", "A")
-        # set all remaining extra information in kwargs
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
 
-        #ipdb.set_trace()
         if ltype == 'city':
             self.city = kwargs['name']
         elif ltype not in ('admin1', 'country') and self.admin2:
             self.city = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
-        #self.admin1 = '' if self.admin1 is None else self.admin1
         if "admin2" in kwargs:
+            self.admin2Code = self.admin2
             self.admin2 = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
-            #self.admin2 = self.city
 
         self.country = self._get_country()
         if ltype != 'country':
+            self.admin1Code = self.admin1
             self.admin1 = self._get_admin1()
             if ltype == 'admin1':
                 self.city = ""
@@ -266,7 +295,7 @@ class GeoPoint(GeoData):
         fcode = info.get('featureCOde', info.get("featureCode", '')).upper()
         fclass = info.get('featureClass', 'P').upper()
 
-        if fcode == "ADM1":
+        if fcode[:4] == "ADM1":
             ltype = 'admin1'
 
         elif fclass == 'A' and fcode:
@@ -283,30 +312,22 @@ class GeoPoint(GeoData):
         return ltype
 
     def _get_country(self):
-        #if self.ltype == 'country':
-        #    return self.country
         if hasattr(self, 'countryCode') and self.countryCode:
             return CountryDB.fromISO(self.countryCode)['country']
         else:
-            #ipdb.set_trace()
-            #raise Exception("No Country info found")
             return ""
 
     def _get_admin1(self):
-        #if self.ltype == 'admin1':
-        #    return self.admin1
         if hasattr(self, 'admin1'):
-            #if self.admin1.isupper() or self.admin1.isdigit():
             try:
                 return AdminDB.fromCode(self.countryCode, self.admin1)['admin1']
-                #msg = AdminDB.fromCode(self.countryCode, self.admin1)
-                #return msg.get('admin1', msg['name'])
             except Exception:
                 pass
-                #log.exception('no admin for {}.{}'.format(self.countryCode, self.admin1))
-            return self.admin1
+            if self.ltype == 'admin1':
+                return self.name
+            else:
+                return self.admin1
         else:
-            #ipdb.set_trace()
             raise Exception('No admin code')
 
 
@@ -355,14 +376,12 @@ class LocationDistribution(GeoData):
                                          0.49 * (pvalue ** 2))
 
         if len(self.realizations) == 1:
-            #lobj = self.realizations.values()[0]
             lobj = (self.realizations.values())[0]
-            lobj.confidence = lobj._score #1
+            lobj.confidence = lobj._score
             cstr = "/".join([lobj.country, "", ""])
             adminstr = "/".join([lobj.country, lobj.admin1, ""])
             self.country[cstr] = max(self.country[cstr], 0.49)
             self.admin1[adminstr] = max(self.admin1[adminstr], .7)
-
 
     def __nonzero__(self):
         return self.realizations != {}

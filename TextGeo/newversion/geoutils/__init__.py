@@ -19,12 +19,14 @@ import logging
 import json
 import numpy as np
 
-log = logging.getLogger("__init__")
-FEATURE_MAP = {"A": "region", "H": "water body",
+log = logging.getLogger("root.geoutils")
+FEATURE_MAP = {"A": "administrative region", "H": "water body",
                "L": "area", "R": "road", "S": "Building",
                "T": "mountain", "U": "undersea", "V": "forest",
                "P": "city", "": "Unknown"}
-
+FEATURERANK = {"CON": 1, "PCL": 2, "ADM": 3, "PPLA": 4, "PPL": 5, "PPLC": 3,
+               "STLMT": 3, "L": 6, "V": 7, "H": 8, "R": 9, "S": 10}
+FEATURE_CLASS_RANK = {"A": 1, "P": 2, "V": 5, "H": 5, "T": 5, "L": 6, "R": 6, "S": 9, "": 10}
 FEATURE_WEIGHTS = {'adm1': 0.8, 'adm2': 0.7, 'adm3': 0.6, 'adm4': 0.5, 'ppla2': 0.6, 'ppla': 0.7,
                    'adm5': 0.4, 'pcli': 1.0, 'ppla3': 0.5, 'pplc': 0.3, 'ppl': 0.2, 'cont': 1.0}
 
@@ -258,15 +260,21 @@ class GeoPoint(GeoData):
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
 
+        if "admin2" in kwargs:
+            self.admin2Code = self.admin2
+            self.admin2 = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
+
         if ltype == 'city':
             self.city = kwargs['name']
-        elif ltype not in ('admin1', 'country') and self.admin2:
-            self.city = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
-        if "admin2" in kwargs:
-            self.admin2 = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
+        elif ltype not in ('admin1', 'country'):
+            if self.admin2:
+                self.city = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
+            else:
+                self.city = kwargs['name']
 
         self.country = self._get_country()
         if ltype != 'country':
+            self.admin1Code = self.admin1
             self.admin1 = self._get_admin1()
             if ltype == 'admin1':
                 self.city = ""
@@ -338,13 +346,15 @@ class LocationDistribution(GeoData):
             LocObj = [LocObj]
 
         for l in LocObj:
+            ## escape if the obtained place is encompasses the entire earth or any of the continents
             try:
                 if 'asciiname' in l.__dict__ and l.asciiname == "earth":
                     continue
 
                 if l.__dict__.get('featureClass', '') == "l" and l.population > 100000000:
                     continue
-            except:
+            except Exception as e:
+                log.exception(str(e))
                 pass
 
             pvalue = l.confidence

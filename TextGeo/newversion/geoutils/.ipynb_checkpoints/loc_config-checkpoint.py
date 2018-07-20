@@ -2,10 +2,10 @@ import nltk
 import os
 import re
 
-loc_default = {"korea": "south korea"}
+loc_default = {"korea": "south korea", "u.s.": "united states", "us": "united states"}
 blacklist = ["member states", "city", ""]
 administrativeNames = ['president', 'country', 'governorate', 'administrative',
-                       'district', 'division']
+                       'district', 'division', 'town', 'village', 'of']
 
 adminRegex = re.compile(r'\b' + r'\b|\b'.join(administrativeNames))
 

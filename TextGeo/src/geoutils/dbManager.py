@@ -14,7 +14,7 @@ import sqlite3
 import sys
 import os
 # from time import sleep
-from . import GeoPoint, safe_convert, isempty
+from . import GeoPoint, safe_convert, isempty, encode
 import json
 from pyelasticsearch import bulk_chunks, ElasticSearch
 import gzip
@@ -186,6 +186,7 @@ class ESWrapper(BaseDB):
         qtype values are exact, relaxed or geo_distance
         Always limit results to 10
         """
+        qkey = encode(qkey)
         q = {"query": {"bool": {}}}
         query_name = kwargs.pop('query_name', 'must')
         query_name = "should"
@@ -233,7 +234,7 @@ class ESWrapper(BaseDB):
 
             if kwargs:
                 #filter_cond = [{"range": {"population": {"gte": min_popln}}}]
-                filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
+                filter_cond += [{"term": {key:encode(val)}} for key, val in kwargs.viewitems()]
                 # print(filter_cond)
                 q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
             elif min_popln:

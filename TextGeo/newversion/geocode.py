@@ -11,7 +11,7 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 from workerpool import WorkerPool
-from geoutils.gazetteer_mod import GeoNames
+from geoutils.gazetteer_mod import GeoNames, GeoPoint
 from geoutils.dbManager import ESWrapper
 from collections import defaultdict
 from urlparse import urlparse
@@ -29,11 +29,12 @@ tracer = logging.getLogger('urllib3')
 tracer.setLevel(logging.CRITICAL)  # or desired level
 # tracer.addHandler(logging.FileHandler('indexer.log'))
 logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
-log = logging.getLogger("rssgeocoder")
+log = logging.getLogger("root")
 
 
 class BaseGeo(object):
     def __init__(self, db, confMethod, min_popln=0, escore=True, min_length=1):
+        # self.gazetteer = Gazetteer(db, confMethod=confMethod, escore=escore)
         self.gazetteer = GeoNames(db, confMethod=confMethod, escore=escore)
         self.min_popln = min_popln
         self.min_length = min_length
@@ -63,9 +64,10 @@ class BaseGeo(object):
                                               else doc.get("link", "")))
         # results = {}
         # kwargs['analyzer'] = 'standard'
-        return self.geocode_fromList(locTexts, results, **kwargs)
+        return self.geocode_fromList(locTexts, results, GTRUTH=doc['GLOCSTR'], **kwargs)
 
-    def geocode_fromList(self, locTexts, results=None, min_popln=None, **kwargs):
+    def geocode_fromList(self, locTexts, results=None, min_popln=None, GTRUTH=None, **kwargs):
+        GTPRESENT = False
         if results is None:
             results = {}
 
@@ -95,6 +97,9 @@ class BaseGeo(object):
                                 results[sub] = LocationDistribution(self.gazetteer.query(sub,
                                                                                      min_popln=min_popln,
                                                                                      **kwargs))
+                                GTRUTHST = '/'.join(GTRUTH.split('/')[:2])
+                                if GTRUTH in results[sub].realizations or GTRUTHST in results[sub].admin1:
+                                    GTPRESENT = True
                             except UnicodeDecodeError:
                                 ipdb.set_trace()
                             results[sub].frequency = 1
@@ -107,7 +112,7 @@ class BaseGeo(object):
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
         total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap])
-        return lmap, max(lmap.items(),
+        return GTPRESENT, lmap, max(lmap.items(),
                          key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
 
     def get_locations_fromURL(self, url):
@@ -136,7 +141,7 @@ class BaseGeo(object):
                     results["URL-DOMAIN_{}".format(urlcountry)].frequency = 1
 
             if 5 < len(urlsubject) < 20:
-                usubj_q = self.gazetteer.query(urlsubject, 15000)
+                usubj_q = self.gazetteer.query(urlsubject, min_popln=15000)
                 if usubj_q:
                     results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
                     results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
@@ -146,14 +151,16 @@ class BaseGeo(object):
         """
         Attach embersGeoCode to document
         """
+        GPRESENT = False
         try:
-            lmap, gp = self.geocode(doc=doc, **kwargs)
+            GPRESENT, lmap, gp = self.geocode(doc=doc, **kwargs)
         except UnicodeDecodeError as e:
             log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
 
         doc['embersGeoCode'] = gp
         doc["location_distribution"] = lmap
+        doc['GPRESENT'] = GPRESENT
         return doc
 
     def score(self, results):
@@ -314,7 +321,7 @@ class TextGeo(object):
                 else:
                     gp_map[l] = {'geo-point': imap[l], 'frequency': 1}
 
-            #gp_map.update(imap)
+            # gp_map.update(imap)
 
         for l in gp_map:
             gp_map[l]['geo-point'] = LocationDistribution(gp_map[l]['geo-point'])
@@ -372,12 +379,22 @@ class TextGeo(object):
         return ns
 
 
+def get_groundTruthInfo(loc, geo):
+    info = geo.gazetteer.get_locInfo(country=loc['Country'], admin=loc['State'], city=loc['City'])
+    return info[0]
+
+
 def tmpfun(doc):
     try:
         msg = json.loads(doc)
+        GT = GeoPoint(**get_groundTruthInfo(msg['events'][0], GEO))
+        msg['groundTruth'] = GT.__dict__
+        msg['GLOCSTR'] = "/".join([GT.country, GT.admin1, (getattr(GT, "admin2", "") or GT.city)])
         msg = GEO.annotate(msg)
         return msg
-    except:
+    except Exception as e:
+        print(e)
+        log.exception(e)
         print("error")
 
 
@@ -394,6 +411,7 @@ if __name__ == "__main__":
                         default='population')
     parser.add_argument('-ne', '--noElasticSearchScore', action='store_true', default=False,
                         help='do not use elasticsearch score')
+    parser.add_argument('--test', action='store_true', default=False)
     args = parser.parse_args()
 
     db = ESWrapper(index_name="geonames", doc_type="places")
@@ -407,20 +425,30 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    wp = WorkerPool(infile, outfile, tmpfun, 200)
-    wp.run()
-    # for l in infile:
-    #     try:
-    #         j = json.loads(l)
-    #         j = GEO.annotate(j)
-    #         #log.debug("geocoded line no:{}, {}".format(lno,
-    #         #                                           encode(j.get("link", ""))))
-    #         lno += 1
-    #         outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-    #     except UnicodeEncodeError:
-    #         log.exception("Unable to readline")
-    #         continue
+    if args.test is False:
+        wp = WorkerPool(infile, outfile, tmpfun, 200)
+        wp.run()
+    else:
+        GP = 0
+        for l in infile:
+            try:
+                j = tmpfun(l)# json.loads(l)
+                if not j:
+                    continue
 
+                #log.debug("geocoded line no:{}, {}".format(lno,
+                #                                           encode(j.get("link", ""))))
+                if j['GPRESENT']:
+                    GP += 1
+                lno += 1
+                if lno > 2000:
+                    break
+                outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+            except UnicodeEncodeError:
+                log.exception("Unable to readline")
+                continue
+
+    print('GP:', GP, lno)
     if not args.cat:
         infile.close()
         outfile.close()

@@ -120,6 +120,7 @@ class ESWrapper(BaseDB):
              {"term": {"name.raw": {"value": qkey}}},
              {"term": {"asciiname.raw": {"value": qkey}}},
              {"term": {"alternatenames": {"value": qkey[1:]}}},
+             {"term": {"alternatenames": {"value": qkey}}},
              {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else unicode(unidecode(reduced_placename)),
                              'fuzziness': kwargs.pop("fuzzy", 0),
                              "max_expansions": kwargs.pop("max_expansion", 5),
@@ -148,7 +149,7 @@ class ESWrapper(BaseDB):
             q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
 
         q['from'] = 0
-        q['size'] = 20
+        q['size'] = 50
         return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
     def query(self, qkey, min_popln=None, **kwargs):
@@ -189,17 +190,22 @@ class ESWrapper(BaseDB):
                                      }
                                  },
                                      {"terms":
-                                      {"featureCode":
-                                       ["pcli", "ppl", "ppla2", "adm3"]}
+                                      # {"featureCode":
+                                      #  ["pcli", "ppl", "ppla2", "adm3"]}
+                                      {"featureClass":
+                                       ["a", "h", "l", "t", "p", "v"]}
                                      }
                                  ]
                                 }
                       },
                       "sort": {"population": "desc"}
             }
+        if kwargs:
+            for key in kwargs:
+                q2['query']['bool']['filter'].append({"term":{key: kwargs[key]}})
 
         res = self.eserver.search(q2, index=self._index,
-                                  doc_type=self._doctype, **kwargs)['hits']['hits'][0]['_source']
+                                  doc_type=self._doctype)['hits']['hits'][0]['_source']
         res['confidence'] = 1.0
         return [GeoPoint(**res)]
 
@@ -240,7 +246,8 @@ class ESWrapper(BaseDB):
                     del(row['latitude'])
                     del(row['longitude'])
                     #print row['name']
-                    row['alternatenames'] = row['alternatenames'].split(",")
+                    row['alternatenames'] = row['alternatenames'].lower().split(",")
+                    row['normalized_asciiname'] = (re.sub(r'\s+', r' ', self.ere.sub("", row['asciiname']))).strip()
                     cnt += 1
                     yield self.eserver.index_op(row, index=self._index, doc_type=self._doctype)
                 except:

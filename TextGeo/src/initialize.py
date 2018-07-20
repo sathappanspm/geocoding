@@ -15,7 +15,7 @@ import json
 import ipdb
 
 from geoutils.dbManager import ESWrapper
-db = ESWrapper('geonames', 'places')
+db = ESWrapper('geonames2', 'places2')
 db.create("./gnames_gaz/allCountries.txt")
 
 

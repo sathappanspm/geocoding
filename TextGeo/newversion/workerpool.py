@@ -27,7 +27,7 @@ log = logging.getLogger(__processor__)
 class WorkerPool(object):
     """Docstring for WorkerPool """
 
-    def __init__(self, input, output, func, nthreads=800):
+    def __init__(self, input, output, func, nthreads=800, limit=None):
         """@todo: to be defined
 
         :param input: @todo
@@ -46,6 +46,7 @@ class WorkerPool(object):
         self._false = 0
         self._nogeo = 0
         self._notruth = 0
+        self._limit = limit
 
     def run_one(self, msg):
         result = self._func(msg)
@@ -63,11 +64,17 @@ class WorkerPool(object):
 
     def run(self):
         last = time.time()
+        cc = 0
         for msg in self._input:
             self._pool.spawn(self.run_one, msg)
             if time.time() - last > 10:
                 log.info("Workers running={}".format(self._nthreads - self._pool.free_count()))
                 last = time.time()
+
+            cc += 1
+            if self._limit and cc > self._limit:
+                break
+
         self._pool.join()
 
 #    def cleanup_workers(self):
