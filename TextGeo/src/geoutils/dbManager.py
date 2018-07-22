@@ -19,8 +19,10 @@ import json
 from pyelasticsearch import bulk_chunks, ElasticSearch
 import gzip
 import zipfile
+import re
 #from copy import deepcopy
-
+from .loc_config import stop_words as STOP_WORDS
+from unidecode import unidecode
 
 unicodecsv.field_size_limit(sys.maxsize)
 
@@ -28,13 +30,7 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-
-sqltypemap = {'char': unicode,
-              'BIGINT': int,
-              'text': unicode, 'INT': int,
-              'FLOAT': float, 'varchar': unicode
-              }
-
+tokenizer = re.compile(u' |\||,|_|-')
 
 class BaseDB(object):
     def __init__(self, dbpath):
@@ -42,91 +38,6 @@ class BaseDB(object):
 
     def insert(self, keys, values, **args):
         pass
-
-
-class SQLiteWrapper(BaseDB):
-    def __init__(self, dbpath, dbname="WorldGazetteer"):
-        self.dbpath = dbpath
-        self.conn = sqlite3.connect(dbpath, check_same_thread=False)
-        self.conn.execute('PRAGMA synchronous = OFF')
-        self.conn.execute('PRAGMA journal_mode = OFF')
-        self.conn.execute("PRAGMA cache_size=5000000")
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
-        self.name = dbname
-
-    def query(self, stmt=None, params=None):
-        # self.conn = sqlite3.connect(self.dbpath)
-        cursor = self.conn.cursor()
-        cursor.row_factory = sqlite3.Row
-        # ipdb.set_trace()
-        # result = self.cursor.execute(stmt, params)
-        result = cursor.execute(stmt, params)
-        result = [GeoPoint(**dict(l)) for l in result.fetchall()]
-        # result = [GeoPoint(**dict(l)) for l in result.fetchmany(1000)]
-        # conn.close()
-        return result
-
-    def insert(self, msg, dup_id):
-        return
-
-    # outdated function
-    def _create(self, csvPath, columns, delimiter="\t", coding='utf-8', **kwargs):
-        with open(csvPath, "rU") as infile:
-            infile.seek(0)
-            reader = unicodecsv.DictReader(infile, dialect='excel',
-                                           fieldnames=columns, encoding=coding)
-            items = [r for r in reader]
-            self.cursor.execute('''CREATE TABLE WorldGazetteer (id float,
-                                    name text, alt_names text, orig_names text, type text,
-                                    pop integer, latitude float, longitude float, country text,
-                                    admin1 text, admin2 text, admin3 text)''')
-            self.cursor.executemany('''INSERT INTO WorldGazetteer
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                                    [tuple([i[c] for c in columns]) for i in items])
-            self.conn.commit()
-
-    def create(self, csvfile, fmode='r', delimiter='\t',
-               coding='utf-8', columns=[], header=False, **kwargs):
-        with open(csvfile, fmode) as infile:
-            infile.seek(0)
-            if header:
-                try:
-                    splits = infile.next().split(delimiter)
-                    if not columns:
-                        columns = splits
-                except Exception:
-                    pass
-
-            self.cursor.execute(''' CREATE TABLE IF NOT EXISTS {} ({})'''.format(self.name,
-                                                                                 ','.join(columns)))
-
-            reader = infile
-            columnstr = ','.join(['?' for c in columns])
-
-            self.cursor.executemany('''INSERT INTO {}
-                                    VALUES ({})'''.format(self.name, columnstr),
-                                    (tuple([i for i in c.decode("utf-8").split("\t")])
-                                     for c in reader)
-                                    )
-            # (tuple([c[i] for i in columns]) for c in reader))
-            self.conn.commit()
-            if 'index' in kwargs:
-                for i in kwargs['index']:
-                    col, iname = i.split()
-                    self.cursor.execute('''CREATE INDEX IF NOT
-                                           EXISTS {} ON {} ({})'''.format(iname.strip(),
-                                                                          self.name,
-                                                                          col.strip()))
-                    self.conn.commit()
-            self.conn.commit()
-
-    def close(self):
-        self.conn.commit()
-
-    def drop(self, tablename):
-        self.cursor.execute("DROP TABLE IF EXISTS {}".format(tablename))
-        self.conn.commit()
 
 
 class DataReader(object):
@@ -181,7 +92,92 @@ class ESWrapper(BaseDB):
         q = {"query": {"bool": {"must": maincondition}}}
         return self.eserver.search(q, index=self._index, doc_type=self._doctype)['hits']['hits'][0]['_source']
 
-    def _query(self, qkey, qtype="exact", analyzer=None, min_popln=None, size=10, **kwargs):
+    def _query(self, qkey, **kwargs):
+        q = {"query": {"bool": {}}}
+        query_name = "should"
+        q["query"]["bool"]["minimum_number_should_match"] = 1
+        kwargs.pop("qtype", "")
+
+        placetokens = [l.strip() for l in tokenizer.split(qkey) if l and l not in STOP_WORDS and l[-1] != '.']
+        if placetokens:
+            reduced_placename = u" ".join(placetokens[0:])
+            if len(placetokens[0]) < 3 and len(placetokens) > 1 and 3.0 / len(placetokens) >= .5:
+                reduced_placename = u" ".join(placetokens[1:])
+        else:
+            reduced_placename = qkey
+
+        # print "qkey", qkey, "reduced", reduced_placename
+        maincondition = [
+            {"bool": {"must": [{"multi_match": {"query": qkey, "fields": ["name.raw^5", "asciiname^5", "alternatenames"], "operator": "and"}},
+                               {"terms": {"featureClass": ["a", "p"]}}],
+                      }},
+             {"term": {"name.raw": {"value": qkey}}},
+             {"term": {"asciiname.raw": {"value": qkey}}},
+             {"term": {"normalized_asciiname": {"value": qkey}}},
+             # {"term": {"alternatenames": {"value": qkey[1:]}}},
+             {"term": {"alternatenames": {"value": qkey}}},
+             {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else unicode(unidecode(reduced_placename)),
+                             'fuzziness': kwargs.pop("fuzzy", 0),
+                             "max_expansions": kwargs.pop("max_expansion", 5),
+                             "prefix_length": kwargs.pop("prefix_length", 1),
+                             'operator': kwargs.pop("operator", "and"),
+                             "fields": ["name^3", "asciiname^3", "alternatenames", "normalized_asciiname^3"]}}
+
+          ]
+
+        q["query"]["bool"][query_name] = maincondition
+
+        if kwargs:
+            filter_cond = []
+            if 'min_popln' in kwargs:
+                popln = kwargs.pop("min_popln")
+                if popln is not None:
+                    filter_cond.append({"range": {"population": {"gte": popln}}})
+
+            for key, val in kwargs.viewitems():
+                if not isinstance(val, basestring):
+                    val = list([(v) for v in val])
+                    filter_cond.append({"terms": {key: val}})
+                else:
+                    filter_cond.append({"term": {key: (val)}})
+
+            q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
+
+        q['from'] = 0
+        q['size'] = 50
+        return self.eserver.search(q, index=self._index, doc_type=self._doctype)
+
+    def query(self, qkey, min_popln=None, **kwargs):
+        #res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']['hits']
+        res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']
+        #max_score = sum([r['_score'] for r in res])
+        max_score =  res['max_score']#sum([r['_score'] for r in res])
+        #for t in res:
+        # print(max_score)
+        gps = []
+        if max_score == 0.0:
+            ## no results were obtained by elasticsearch instead it returned a random/very
+            ## low scoring one
+            res['hits'] = []
+
+        for t in res['hits']:
+            t['_source']['geonameid'] = t["_source"]["id"]
+            #t['_source']['_score'] = t[1] / max_score
+            t['_source']['_score'] = t['_score'] / max_score
+            pt = GeoPoint(**t["_source"])
+            if t['_source']['featureCode'].lower() == "cont":
+                gps = [pt]
+                break
+
+            gps.append(pt)
+
+        if len(gps) == 1:
+            gps[0]._score = (min(float(len(gps[0].name)),float(len(qkey)))
+                                /max(float(len(gps[0].name)),float(len(qkey))))
+
+        return gps
+
+    def _oldquery(self, qkey, qtype="exact", analyzer=None, min_popln=None, size=10, **kwargs):
         """
         qtype values are exact, relaxed or geo_distance
         Always limit results to 10
@@ -244,7 +240,7 @@ class ESWrapper(BaseDB):
 
         return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
-    def query(self, qkey, min_popln=None, **kwargs):
+    def oldquery(self, qkey, min_popln=None, **kwargs):
         #res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']['hits']
         res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']
         #max_score = sum([r['_score'] for r in res])
@@ -282,17 +278,22 @@ class ESWrapper(BaseDB):
                                      }
                                  },
                                      {"terms":
-                                      {"featureCode":
-                                       ["pcli", "ppl", "ppla2", "adm3"]}
+                                      # {"featureCode":
+                                      #  ["pcli", "ppl", "ppla2", "adm3"]}
+                                      {"featureClass":
+                                       ["a", "h", "l", "t", "p", "v"]}
                                      }
                                  ]
                                 }
                       },
                       "sort": {"population": "desc"}
             }
+        if kwargs:
+            for key in kwargs:
+                q2['query']['bool']['filter'].append({"term":{key: kwargs[key]}})
 
         res = self.eserver.search(q2, index=self._index,
-                                  doc_type=self._doctype, **kwargs)['hits']['hits'][0]['_source']
+                                  doc_type=self._doctype)['hits']['hits'][0]['_source']
         res['confidence'] = 1.0
         return [GeoPoint(**res)]
 
@@ -315,6 +316,7 @@ class ESWrapper(BaseDB):
         self.eserver.refresh(self._index)
 
     def _opLoader(self, datacsv, confDir):
+        ere = re.compile("[^\sa-zA-Z0-9]")
         with DataReader(datacsv, os.path.join(confDir, 'geonames.conf')) as reader:
             cnt = 0
             for row in reader:
@@ -333,12 +335,14 @@ class ESWrapper(BaseDB):
                     del(row['latitude'])
                     del(row['longitude'])
                     #print row['name']
-                    row['alternatenames'] = row['alternatenames'].split(",")
+                    row['alternatenames'] = row['alternatenames'].lower().split(",")
+                    row['normalized_asciiname'] = (re.sub(r'\s+', r' ', ere.sub("", row['asciiname']))).strip()
                     cnt += 1
                     yield self.eserver.index_op(row, index=self._index, doc_type=self._doctype)
                 except:
                     print json.dumps(row)
                     continue
+
 
 
 def main(args):

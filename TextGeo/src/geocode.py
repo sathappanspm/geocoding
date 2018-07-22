@@ -44,12 +44,12 @@ class BaseGeo(object):
             "OTHER": 0.2
         }
 
-    def geocode(self, doc=None, loclist=None, **kwargs):
+    def geocode(self, doc=None, loclist=None, eKey='BasisEnrichment', **kwargs):
         locTexts = []
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
             locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), l['neType']) for l in
-                         doc["BasisEnrichment"]["entities"]
+                         doc[eKey]["entities"]
                          if ((l["neType"] in ("LOCATION", "NATIONALITY")) and
                              len(l['expr']) >= self.min_length)]
 
@@ -142,12 +142,20 @@ class BaseGeo(object):
                     results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
         return results
 
-    def annotate(self, doc, **kwargs):
+    def annotate(self, doc, enrichmentKeys=['BasisEnrichment'], **kwargs):
         """
         Attach embersGeoCode to document
         """
+        eKey = None
+        for key in enrichmentKeys:
+            if key in doc and doc[key]:
+                eKey = key
+
+        if eKey is None:
+            return doc
+
         try:
-            lmap, gp = self.geocode(doc=doc, **kwargs)
+            lmap, gp = self.geocode(doc=doc, eKey=eKey, **kwargs)
         except UnicodeDecodeError as e:
             log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
@@ -375,7 +383,7 @@ class TextGeo(object):
 def tmpfun(doc):
     try:
         msg = json.loads(doc)
-        msg = GEO.annotate(msg)
+        msg = GEO.annotate(msg, enrichmentKeys=['BasisEnrichment', ''])
         return msg
     except:
         print("error")
@@ -392,7 +400,7 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
 
-    db = ESWrapper(index_name="geonames", doc_type="places")
+    db = ESWrapper(index_name="geonames2", doc_type="places2")
     GEO = BaseGeo(db)
 
     if args.cat:

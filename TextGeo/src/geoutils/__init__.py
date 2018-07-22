@@ -19,11 +19,16 @@ import logging
 import json
 import numpy as np
 
-log = logging.getLogger("__init__")
-FEATURE_MAP = {"A": "region", "H": "water body",
+log = logging.getLogger("root.geoutils")
+FEATURE_MAP = {"A": "administrative region", "H": "water body",
                "L": "area", "R": "road", "S": "Building",
                "T": "mountain", "U": "undersea", "V": "forest",
                "P": "city", "": "Unknown"}
+FEATURERANK = {"CON": 1, "PCL": 2, "ADM": 3, "PPLA": 4, "PPL": 5, "PPLC": 3,
+               "STLMT": 3, "L": 6, "V": 7, "H": 8, "R": 9, "S": 10}
+FEATURE_CLASS_RANK = {"A": 1, "P": 2, "V": 5, "H": 5, "T": 5, "L": 6, "R": 6, "S": 9, "": 10}
+FEATURE_WEIGHTS = {'adm1': 0.8, 'adm2': 0.7, 'adm3': 0.6, 'adm4': 0.5, 'ppla2': 0.6, 'ppla': 0.7,
+                   'adm5': 0.4, 'pcli': 1.0, 'ppla3': 0.5, 'pplc': 0.3, 'ppl': 0.2, 'cont': 1.0}
 
 
 def safe_convert(obj, ctype, default=None):
@@ -181,10 +186,41 @@ class ADMIN_INFO(dict):
 
         with open(path) as inf:
             code2name = json.load(inf)
-            data = {val['name'].lower(): val for val in code2name.values()}
-            data.update({val['asciiname'].lower(): val for val in code2name.values()})
 
         self.code2name = code2name
+        if 'BH.18' not in self.code2name:
+            self.code2name['BH.18'] = {'_score': 0.5789473684210527,
+                                       'admin1': u'central governorate',
+                                       'admin2': '',
+                                       'admin3': u'',
+                                       'admin4': u'',
+                                       'alternatenames': [u'central governorate',
+                                                          u'al muhafazah al wusta',
+                                                          u'al mu\u1e29\u0101faz\u0327ah al wus\u0163\xe1',
+                                                          u'almhafzt alwsty',
+                                                          u'\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629 \u0627\u0644\u0648\u0633\u0637\u0649'],
+                                       'asciiname': u'central governorate',
+                                       'cc2': u'',
+                                       'city': '',
+                                       'confidence': 0.5789473684210527,
+                                       'coordinates': [50.56667, 26.16667],
+                                       'country': u'Bahrain',
+                                       'countryCode': u'bh',
+                                       'dem': u'6',
+                                       'elevation': -1,
+                                       'featureClass': u'a',
+                                       'featureCode': u'adm1h',
+                                       'geonameid': u'7090973',
+                                       'id': u'7090973',
+                                       'ltype': 'admin1',
+                                       'modificationDate': u'2017-03-21',
+                                       'name': u'central governorate',
+                                       'population': 0,
+                                       'timezone': u'asia/bahrain',
+                                       'key': 'bh.18'}
+
+        data = {val['name'].lower(): val for val in code2name.values()}
+        data.update({val['asciiname'].lower(): val for val in code2name.values()})
         super(ADMIN_INFO, self).__init__(data)
 
     def query(self, name):
@@ -224,15 +260,21 @@ class GeoPoint(GeoData):
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
 
+        if "admin2" in kwargs:
+            self.admin2Code = self.admin2
+            self.admin2 = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
+
         if ltype == 'city':
             self.city = kwargs['name']
-        elif ltype not in ('admin1', 'country') and self.admin2:
-            self.city = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
-        if "admin2" in kwargs:
-            self.admin2 = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
+        elif ltype not in ('admin1', 'country'):
+            if self.admin2:
+                self.city = Admin2DB.query(self.countryCode, self.admin1, self.admin2)
+            else:
+                self.city = kwargs['name']
 
         self.country = self._get_country()
         if ltype != 'country':
+            self.admin1Code = self.admin1
             self.admin1 = self._get_admin1()
             if ltype == 'admin1':
                 self.city = ""
@@ -258,7 +300,7 @@ class GeoPoint(GeoData):
         fcode = info.get('featureCOde', info.get("featureCode", '')).upper()
         fclass = info.get('featureClass', 'P').upper()
 
-        if fcode == "ADM1":
+        if fcode[:4] == "ADM1":
             ltype = 'admin1'
 
         elif fclass == 'A' and fcode:
@@ -286,7 +328,10 @@ class GeoPoint(GeoData):
                 return AdminDB.fromCode(self.countryCode, self.admin1)['admin1']
             except Exception:
                 pass
-            return self.admin1
+            if self.ltype == 'admin1':
+                return self.name
+            else:
+                return self.admin1
         else:
             raise Exception('No admin code')
 
@@ -301,13 +346,15 @@ class LocationDistribution(GeoData):
             LocObj = [LocObj]
 
         for l in LocObj:
+            ## escape if the obtained place is encompasses the entire earth or any of the continents
             try:
                 if 'asciiname' in l.__dict__ and l.asciiname == "earth":
                     continue
 
                 if l.__dict__.get('featureClass', '') == "l" and l.population > 100000000:
                     continue
-            except:
+            except Exception as e:
+                log.exception(str(e))
                 pass
 
             pvalue = l.confidence
