@@ -12,26 +12,23 @@ __version__ = "0.0.1"
 
 from workerpool import WorkerPool
 from geoutils.dbManager import ESWrapper
-from geocode import BaseGeo
+from geocode_twitter import TweetGeocoder
 import json
-import ipdb
+# import ipdb
 
-db = ESWrapper(index_name="geonames", doc_type="places")
+#db = ESWrapper(index_name="geonames2", doc_type="places2")
                #host="http://9899c246ngrok.io",
                #port=80)
 
-GEO = BaseGeo(db)
 
 
-def tmpfun(doc, reduce=False, fuzzy=0, prefix_length=0):
+def tmpfun(doc):
     try:
         msg = json.loads(doc)
-        msg = GEO.annotate(msg, reduce=reduce, fuzzy=fuzzy, prefix_length=prefix_length)
+        msg = GEO.annotate(msg)
         return msg
     except UnicodeEncodeError as e:
         print(str(e))
-        ipdb.set_trace()
-        print("error")
 
 
 def encode(s):
@@ -48,7 +45,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cat", "-c", action='store_true',
                         default=False, help="read from stdin")
-    parser.add_argument("--reduce", "-r", action='store_true',
+    parser.add_argument("--test", "-t", action='store_true',
                         default=False, help="read from stdin")
     parser.add_argument("-f", "--fuzzy", type=int, default=0, help="fuzzy inputs")
     parser.add_argument("-p", "--prefix", type=int, default=1, help="prefix lenght")
@@ -56,8 +53,9 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
 
-    db = ESWrapper(index_name="geonames", doc_type="places")
-    GEO = BaseGeo(db)
+    db = ESWrapper(index_name="geonames2", doc_type="places2")
+    GEO = TweetGeocoder(db)
+    #GEO = BaseGeo(db)
 
     if args.cat:
         infile = sys.stdin
@@ -67,24 +65,26 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    from functools import partial
-    partfunc = partial(tmpfun, reduce=args.reduce, fuzzy=args.fuzzy, prefix_length=args.prefix)
-    # wp = WorkerPool(infile, outfile, partfunc, 500)
-    # wp.run()
-    for l in infile:
-        try:
-            #j = json.loads(l)
-            #j = GEO.annotate(j)
-            j=partfunc(l)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-            if lno > 100:
-                break
-        except UnicodeEncodeError:
-            log.exception("Unable to readline")
-            continue
+    if not args.test:
+        wp = WorkerPool(infile, outfile, tmpfun, 500)
+        wp.run()
+    else:
+        for l in infile:
+            try:
+                #j = json.loads(l)
+                #j = GEO.annotate(j)
+                j=tmpfun(l)
+                #log.debug("geocoded line no:{}, {}".format(lno,
+                #                                           encode(j.get("link", ""))))
+                lno += 1
+                outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+                #if lno > 100:
+                #    break
+            except Exception as e:
+                print(str(e))
+                # ipdb.set_trace()
+                # log.exception("Unable to readline")
+                continue
 
     if not args.cat:
         infile.close()

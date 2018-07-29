@@ -15,7 +15,7 @@ from . import GeoPoint, blacklist, loc_default, CountryDB, AdminDB
 from .loc_config import reduce_stopwords
 from pylru import lrudecorator
 import logging
-import ipdb
+# import ipdb
 
 log = logging.getLogger("rssgeocoder")
 
