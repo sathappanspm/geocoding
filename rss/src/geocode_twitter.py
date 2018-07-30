@@ -269,8 +269,11 @@ class TweetGeocoder(BaseGeo):
     def _geocode(self, lat, lon, places, text, min_popln):
         results = {}
         if lat and lon:
-            results['coordinates'] = LocationDistribution(self._geo_lat_lon(lat, lon, min_popln))
-            results['coordinates'].frequency = 1
+            try:
+                results['coordinates'] = LocationDistribution(self._geo_lat_lon(lat, lon, min_popln))
+                results['coordinates'].frequency = 1
+            except:
+                pass
 
         if places:
             results['places'] = LocationDistribution(self._geo_places(places, min_popln))

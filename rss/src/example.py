@@ -53,8 +53,8 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
 
-    db = ESWrapper(index_name="geonames2", doc_type="places2")
-    GEO = TweetGeocoder(db)
+    db = ESWrapper(index_name="geonames", doc_type="places")
+    GEO = TweetGeocoder(db, min_popln=5000)
     #GEO = BaseGeo(db)
 
     if args.cat:
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     lno = 0
     if not args.test:
-        wp = WorkerPool(infile, outfile, tmpfun, 500)
+        wp = WorkerPool(infile, outfile, tmpfun, 1000)
         wp.run()
     else:
         for l in infile:
