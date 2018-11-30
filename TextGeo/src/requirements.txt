@@ -1,3 +1,7 @@
 gevent==1.0.1
 nltk==3.0.2
 pyelasticsearch==1.4
+unicodecsv
+unidecode
+numpy
+elasticsearch-dsl==1.9
