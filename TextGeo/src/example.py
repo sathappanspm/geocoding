@@ -23,10 +23,10 @@ db = ESWrapper(index_name="geonames", doc_type="places")
 GEO = BaseGeo(db)
 
 
-def tmpfun(doc, reduce=False, fuzzy=0, prefix_length=0):
+def tmpfun(doc):
     try:
         msg = json.loads(doc)
-        msg = GEO.annotate(msg, reduce=reduce, fuzzy=fuzzy, prefix_length=prefix_length)
+        msg = GEO.annotate(msg)
         return msg
     except UnicodeEncodeError as e:
         print(str(e))
@@ -48,10 +48,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cat", "-c", action='store_true',
                         default=False, help="read from stdin")
-    parser.add_argument("--reduce", "-r", action='store_true',
-                        default=False, help="read from stdin")
-    parser.add_argument("-f", "--fuzzy", type=int, default=0, help="fuzzy inputs")
-    parser.add_argument("-p", "--prefix", type=int, default=1, help="prefix lenght")
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
@@ -67,15 +63,13 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    from functools import partial
-    partfunc = partial(tmpfun, reduce=args.reduce, fuzzy=args.fuzzy, prefix_length=args.prefix)
     # wp = WorkerPool(infile, outfile, partfunc, 500)
     # wp.run()
     for l in infile:
         try:
             #j = json.loads(l)
             #j = GEO.annotate(j)
-            j=partfunc(l)
+            j=tmpfun(l)
             #log.debug("geocoded line no:{}, {}".format(lno,
             #                                           encode(j.get("link", ""))))
             lno += 1
