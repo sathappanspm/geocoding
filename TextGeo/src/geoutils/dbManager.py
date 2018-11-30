@@ -116,9 +116,11 @@ class ESWrapper(BaseDB):
              {"term": {"normalized_asciiname": {"value": qkey}}},
              # {"term": {"alternatenames": {"value": qkey[1:]}}},
              {"term": {"alternatenames": {"value": qkey}}},
+             # {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else unicode(unidecode(reduced_placename)),
+                              
              {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else unicode(unidecode(reduced_placename)),
                              'fuzziness': kwargs.pop("fuzzy", 0),
-                             "max_expansions": kwargs.pop("max_expansion", 5),
+                             "max_expansions": kwargs.pop("max_expansion", 10),
                              "prefix_length": kwargs.pop("prefix_length", 1),
                              'operator': kwargs.pop("operator", "and"),
                              "fields": ["name^3", "asciiname^3", "alternatenames", "normalized_asciiname^3"]}}
@@ -342,7 +344,30 @@ class ESWrapper(BaseDB):
                 except:
                     print json.dumps(row)
                     continue
-
+                    
+    def remove_dynamic_stopwords(self, term):
+        # cc = {}
+        # ttl = 0
+        words = [w for t in term.split("-") for w in t.split() if len(w) > 1]
+        
+        if len(words) == 1:
+            return term
+        
+        stopword_removed = ""
+        for word in words:
+            try:
+                t = self.eserver.count(word)['count']
+                if t >= 20000:
+                    continue
+            except:
+                pass
+            
+            stopword_removed += (word + " ")
+            # else:
+            #     print(term, "stopword ", word)
+        
+        return stopword_removed.strip()
+        
 
 
 def main(args):

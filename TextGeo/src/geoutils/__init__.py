@@ -44,7 +44,7 @@ def isempty(s):
     """
     return if input object(string) is empty
     """
-    if s in (None, "", "-"):
+    if s in (None, "", "-", []):
         return True
 
     return False
@@ -335,6 +335,13 @@ class GeoPoint(GeoData):
         else:
             raise Exception('No admin code')
 
+    def __getitem__(self, name):
+        return self.__dict__[name]
+    
+    def __setitem__(self, name, value):
+        self.__dict__[name] = value
+        return self
+
 
 class LocationDistribution(GeoData):
     def __init__(self, LocObj):
@@ -393,12 +400,18 @@ class LocationDistribution(GeoData):
     def __nonzero__(self):
         return self.realizations != {}
 
-    def isEmpty(self):
+    def isempty(self):
         return (not self.__nonzero__())
 
     def __eq__(self, cmpObj):
         return self.realizations == cmpObj.realizations
 
+    def __getitem__(self, name):
+        return self.__dict__[name]
+    
+    def __setitem__(self, name, value):
+        self.__dict__[name] = value
+        return self
 
 CountryDB = COUNTRY_INFO()
 AdminDB = ADMIN_INFO()
