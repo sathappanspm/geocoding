@@ -11,7 +11,10 @@ import gevent.monkey
 import logging
 import time
 # import gevent
-from gevent.coros import BoundedSemaphore
+try:
+    from gevent.coros import BoundedSemaphore
+except:
+    from gevent.lock import BoundedSemaphore
 from gevent.pool import Pool
 import json
 
@@ -27,7 +30,7 @@ log = logging.getLogger(__processor__)
 class WorkerPool(object):
     """Docstring for WorkerPool """
 
-    def __init__(self, input, output, func, nthreads=800):
+    def __init__(self, input, output, func, nthreads=800, maxcnt=None):
         """@todo: to be defined
 
         :param input: @todo
@@ -46,6 +49,7 @@ class WorkerPool(object):
         self._false = 0
         self._nogeo = 0
         self._notruth = 0
+        self.maxcnt = maxcnt
 
     def run_one(self, msg):
         result = self._func(msg)
@@ -63,11 +67,15 @@ class WorkerPool(object):
 
     def run(self):
         last = time.time()
+        cntr = 0
         for msg in self._input:
             self._pool.spawn(self.run_one, msg)
             if time.time() - last > 10:
                 log.info("Workers running={}".format(self._nthreads - self._pool.free_count()))
                 last = time.time()
+            cntr += 1
+            if self.maxcnt and cntr > self.maxcnt:
+                break
         self._pool.join()
 
 #    def cleanup_workers(self):

@@ -3,7 +3,7 @@ import os
 import re
 
 loc_default = {"korea": "south korea", "u.s.": "united states", "us": "united states"}
-blacklist = ["member states", "city", ""]
+blacklist = ["member states", "city", "", "united nation", "united nations"]
 administrativeNames = ['president', 'country', 'governorate', 'administrative',
                        'district', 'division', 'town', 'village', 'of']
 

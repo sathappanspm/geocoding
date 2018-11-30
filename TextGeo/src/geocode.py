@@ -21,6 +21,7 @@ from geoutils import encode, isempty
 import json
 import ipdb
 import re
+from collections import Counter
 
 numstrip=re.compile("\d")
 tracer = logging.getLogger('elasticsearch')
@@ -41,20 +42,27 @@ class BaseGeo(object):
             "LOCATION": 1.0,
             "NATIONALITY": 0.75,
             "ORGANIZATION": 0.5,
-            "OTHER": 0.2
+            "OTHER": 0.0
         }
 
     def geocode(self, doc=None, loclist=None, eKey='BasisEnrichment', **kwargs):
         locTexts = []
+        NAMED_ENTITY_TYPES_TO_CHECK = [key for key in self.weightage if self.weightage[key] > 0]
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
             locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), l['neType']) for l in
                          doc[eKey]["entities"]
-                         if ((l["neType"] in ("LOCATION", "NATIONALITY")) and
+                         if ((l["neType"] in NAMED_ENTITY_TYPES_TO_CHECK) and
                              len(l['expr']) >= self.min_length)]
 
             # locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
                          # doc['BasisEnrichment']['nounPhrases']]
+            persons = [(numstrip.sub("", l['expr'].lower()).strip(),
+                        l['neType'])
+                        for l in
+                        doc[eKey]["entities"]
+                        if ((l["neType"] == "PERSON") and
+                        len(l['expr']) >= self.min_length)]
 
         if loclist is not None:
             locTexts += [l.lower() for l in loclist]
@@ -63,9 +71,9 @@ class BaseGeo(object):
                                               else doc.get("link", "")))
         # results = {}
         # kwargs['analyzer'] = 'standard'
-        return self.geocode_fromList(locTexts, results, **kwargs)
+        return self.geocode_fromList(locTexts, persons, results, **kwargs)
 
-    def geocode_fromList(self, locTexts, results=None, min_popln=None, **kwargs):
+    def geocode_fromList(self, locTexts, persons, results=None, min_popln=None, **kwargs):
         if results is None:
             results = {}
 
@@ -73,6 +81,7 @@ class BaseGeo(object):
             min_popln = self.min_popln
 
         itype = {}
+        realized_countries = []
         for l in locTexts:
             if l == "":
                 continue
@@ -92,15 +101,42 @@ class BaseGeo(object):
                         else:
                             itype[sub] = itype[l]
                             try:
-                                results[sub] = LocationDistribution(self.gazetteer.query(sub,
-                                                                                     min_popln=min_popln,
-                                                                                     **kwargs))
+                                results[sub] = self._queryitem(sub, itype[sub])
+                                if len(results[sub].realizations) == 1:
+                                    realized_countries.append(list(results[sub].realizations.values())[0]['countryCode'].lower())
                             except UnicodeDecodeError:
                                 ipdb.set_trace()
                             results[sub].frequency = 1
             except UnicodeDecodeError:
                 log.exception("Unable to make query for string - {}".format(encode(l)))
+        
+#         realized_countries = Counter(realized_countries)
+#         co_realized = float(sum(realized_countries.values()))
+#         selco = [kl for kl, vl in realized_countries.viewitems()
+#                                                  if float(vl/co_realized) >= 0.5]
+#         try:
+#             selco = realized_countries.most_common(n=1)[0][0]
+#         except:
+#             selco = []
+        selco = list(set(realized_countries))
 
+        if selco not in (None, "", []):
+            results = self.fuzzyquery(results, 
+                                      countryFilter=selco)
+
+        persons_res = {}
+        for entitem in persons:
+            querytext, _ = entitem
+            if querytext not in persons_res:
+                persons_res[querytext] = {"expansions": self._queryitem(querytext, "LOCATION", countryCode=selco),
+                                          "freq": 1}
+                if querytext not in results:
+                    results[querytext] = persons_res[querytext]['expansions']
+                    results[querytext].frequency = 1
+            else:
+                persons_res[querytext]["freq"] += 1
+                results[querytext].frequency += 1
+            
         scores = self.score(results)
         custom_max = lambda x: max(x.viewvalues(),
                                    key=lambda y: y['score'])
@@ -109,6 +145,17 @@ class BaseGeo(object):
         total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap])
         return lmap, max(lmap.items(),
                          key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
+
+    
+    def _queryitem(self, item, itemtype, **kwargs):
+        if itemtype == "LOCATION": 
+            res = self.gazetteer.query(item, **kwargs)
+        else:
+            res = self.gazetteer.query(item, fuzzy='AUTO', featureCode='pcli', operator='or')
+            if res == []:
+                res = self.gazetteer.query(item, featureCode='adm1', operator='or')
+        
+        return LocationDistribution(res)
 
     def get_locations_fromURL(self, url):
         """
@@ -141,6 +188,18 @@ class BaseGeo(object):
                     results["URL-SUBJECT_{}".format(urlsubject)] = LocationDistribution(usubj_q)
                     results["URL-SUBJECT_{}".format(urlsubject)].frequency = 1
         return results
+
+    def fuzzyquery(self, locmap, countryFilter=[]):
+        for loc in locmap:
+            if len(locmap[loc].realizations) != 1:
+                freq = locmap[loc].frequency
+                subres = self.gazetteer.query(loc, countryCode=countryFilter, fuzzy='AUTO')
+                if subres != []:
+                    pts = subres +locmap[loc].realizations.values()
+                    ldist = self.gazetteer._get_loc_confidence(pts, self.min_popln)
+                    locmap[loc] = LocationDistribution(ldist)
+                    locmap[loc].frequency = freq
+        return locmap
 
     def annotate(self, doc, enrichmentKeys=['BasisEnrichment'], **kwargs):
         """
@@ -411,19 +470,20 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    wp = WorkerPool(infile, outfile, tmpfun, 200)
-    wp.run()
-    # for l in infile:
-    #     try:
-    #         j = json.loads(l)
-    #         j = GEO.annotate(j)
-    #         #log.debug("geocoded line no:{}, {}".format(lno,
-    #         #                                           encode(j.get("link", ""))))
-    #         lno += 1
-    #         outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-    #     except UnicodeEncodeError:
-    #         log.exception("Unable to readline")
-    #         continue
+    # wp = WorkerPool(infile, outfile, tmpfun, 200)
+    # wp.run()
+    for l in infile:
+        try:
+            j = json.loads(l)
+            j = GEO.annotate(j)
+            #log.debug("geocoded line no:{}, {}".format(lno,
+            #                                           encode(j.get("link", ""))))
+            lno += 1
+            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+        except UnicodeEncodeError:
+            ipdb.set_trace()
+            log.exception("Unable to readline")
+            continue
 
     if not args.cat:
         infile.close()

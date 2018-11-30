@@ -11,7 +11,7 @@ __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
 from .dbManager import ESWrapper
-from . import GeoPoint, blacklist, loc_default, CountryDB, AdminDB, FEATURE_WEIGHTS
+from . import GeoPoint, blacklist, loc_default, CountryDB, AdminDB, FEATURE_WEIGHTS, isempty
 from .loc_config import reduce_stopwords, remove_administrativeNames, stop_words as STOP_WORDS
 # from pylru import lrudecorator
 import logging
@@ -19,6 +19,7 @@ import ipdb
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search
 from elasticsearch_dsl import Search, Q
+import numpy as np
 import re
 
 log = logging.getLogger("rssgeocoder")
@@ -39,7 +40,7 @@ class BaseGazetteer(object):
 
 
 class GeoNames(BaseGazetteer):
-    def __init__(self, db, priority=None, confMethod='Population', escore=True):
+    def __init__(self, db, priority=None, confMethod='Fusion', escore=True):
         self.db = db  # SQLiteWrapper(dbpath)
         self.escore = escore
 
@@ -54,7 +55,7 @@ class GeoNames(BaseGazetteer):
 
         self._get_loc_confidence = getattr(self, '_get_loc_confidence_by{}'.format(confMethod))
 
-    def esquery(self, name, min_popln=0, **kwargs):
+    def esquery(self, name, min_popln=0, limit=None, **kwargs):
         """
         Search the locations DB for the given name
         params:
@@ -74,8 +75,10 @@ class GeoNames(BaseGazetteer):
         country = self._querycountry(name)
         if country == []:
             admin = self._querystate(name, **kwargs)
-            city_alt = self.db.query(name, qtype=kwargs.pop("qtype", "cross_fields"),
+            city_alt = self.db.query(name, qtype=kwargs.pop("qtype", "best_fields"),
                                      min_popln=min_popln, **kwargs)
+            if limit is not None:
+                city_alt = city_alt[:5]
         else:
             admin, city_alt = [], []
 
@@ -85,6 +88,9 @@ class GeoNames(BaseGazetteer):
     # @lrudecorator(1000)
     def query(self, name, min_popln=0, **kwargs):
         reduceFlag = kwargs.pop('reduce', False)
+        if ("fuzzy" in kwargs and kwargs['fuzzy'] != 0):
+            name = self.db.remove_dynamic_stopwords(name)
+            
         ldist = self._query(name, min_popln=min_popln, **kwargs)
         ldist = self._get_loc_confidence(ldist, min_popln)
 
@@ -115,6 +121,33 @@ class GeoNames(BaseGazetteer):
 
         return ldist
 
+    def _get_loc_confidence_byFusion(self, ldist, min_popln):
+        popsum = sum(np.log([(float(l.population) + 10.0) for l in ldist]))
+        rmset = set()
+        featuresum = sum([FEATURE_WEIGHTS.get(l.featureCode, 0.05) for l in ldist])
+        for idx, l in enumerate(ldist):
+            # if l.featureClass.lower() == "l":
+            #    rmset.add(idx)
+
+            l['poplnConf'] = (np.log(float(l.population) + 10.0) / popsum)
+            l['hierConf'] = (FEATURE_WEIGHTS.get(l.featureCode, 0.05) / featuresum)
+            if self.escore:
+                l.confidence = (l['poplnConf'] + l['hierConf'])/2 * self.escore
+
+        if len(rmset) < len(ldist):
+            ldist = [l for idx, l in enumerate(ldist) if idx not in rmset]
+            popsum = sum([(float(l.population) + 10.0) for l in ldist])
+            featuresum = sum([FEATURE_WEIGHTS.get(l.featureCode, 0.05) for l in ldist])
+            for l in ldist:
+                l['poplnConf'] = (np.log(float(l.population) + 10.0) / popsum)
+                l['hierConf'] = (FEATURE_WEIGHTS.get(l.featureCode, 0.05) / featuresum)
+                # l.confidence = ((float(l.population) + 10.0) / popsum)
+                if self.escore:
+                    l.confidence = (l['poplnConf'] + l['hierConf'])/2 * self.escore
+                    # l.confidence = l.confidence * self.escore
+
+        return ldist
+    
     def _get_loc_confidence_byUniform(self, ldist, min_popln):
         rmset = set()
         for idx, l in enumerate(ldist):
@@ -206,7 +239,7 @@ class GeoNames(BaseGazetteer):
         countrycode = (co.countryCode)
         pts = None
         ctys = []
-        if city not in (None, '', '-'):
+        if not isempty(city):   #  not in (None, '', '-'):
             city = city.lower()
             pts = (self.db.query(city, countryCode=countrycode.lower()))
             ctys = pts
@@ -216,13 +249,13 @@ class GeoNames(BaseGazetteer):
                 pts = self.db.query(city, countryCode=countrycode.lower(), fuzzy='AUTO')
                 pts = [p for p in pts if p.featureCode[:4].lower() != 'adm1']
 
-        if admin not in (None, '', '-'):
+        if not isempty(admin):  #  not in (None, '', '-'):
             admin = admin.lower()
             admins = self.db.query(admin,
                                    countryCode=countrycode.lower(),
                                    featureCode=['adm1', 'adm1h'])
 
-            if city not in (None, []):
+            if not isempty(city): #   not in (None, []):
                 adms = [al.lower() for l in admins for
                         al in l.__dict__.get('alternatenames', [l.admin1])
                         if l.featureCode.lower()[:4].lower() in ('adm1', 'ppla')]

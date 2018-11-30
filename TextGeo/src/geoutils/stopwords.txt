@@ -1,3 +1,9 @@
+arab
+army
+state
+free
+military
+navy
 port
 of
 the
@@ -10,6 +16,8 @@ government
 president
 citizen
 to
+village
+town
 إلى
 ميناء
 من
@@ -33,3 +41,4 @@ país
 gobierno
 presidente
 ciudadano
+united nation
