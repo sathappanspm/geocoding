@@ -1,4 +1,5 @@
 ### Requirements
+`pip install -r requirements.txt`
 Elasticsearch 5.4
 
 ### Setup
@@ -17,3 +18,4 @@ ipython
 >>> geo = BaseGeo(db=db)
 >>> geo.geocode_fromList(["US", "Arlington", "Virginia"], [])[0]
 ```
+here the array passed to geocode_fromList function is the set on named entities detected as location from text. This can be obtained from sources like stanfordNLP, spacy, BasisTech etc.
