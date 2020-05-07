@@ -18,8 +18,6 @@ from collections import defaultdict
 import logging
 import json
 import numpy as np
-from six import string_types
-
 
 log = logging.getLogger("root.geoutils")
 FEATURE_MAP = {"A": "administrative region", "H": "water body",
@@ -246,7 +244,7 @@ class GeoPoint(GeoData):
     """
     def __init__(self, population=0, **kwargs):
         # self.orig_dict = kwargs
-        if isinstance(population, string_types) and population != '':
+        if isinstance(population, basestring) and population != '':
             self.population = int(population)
         else:
             self.population = population
@@ -255,12 +253,6 @@ class GeoPoint(GeoData):
             kwargs['geonameid'] = kwargs.pop('id')
 
         ltype = self._get_ltype(kwargs)
-
-        if 'coordinates' in kwargs:
-            if isinstance(kwargs['coordinates'], str):
-                self.coordinates = [float(_) for _ in kwargs.pop('coordinates').split(',')][::-1]
-            else:
-                self.coordinates = kwargs.pop('coordinates')
 
         self.ltype = ltype
         self.city = ""
@@ -345,7 +337,7 @@ class GeoPoint(GeoData):
 
     def __getitem__(self, name):
         return self.__dict__[name]
-
+    
     def __setitem__(self, name, value):
         self.__dict__[name] = value
         return self
@@ -398,7 +390,7 @@ class LocationDistribution(GeoData):
                                          0.49 * (pvalue ** 2))
 
         if len(self.realizations) == 1:
-            lobj = list(self.realizations.values())[0]
+            lobj = (self.realizations.values())[0]
             lobj.confidence = lobj._score
             cstr = "/".join([lobj.country, "", ""])
             adminstr = "/".join([lobj.country, lobj.admin1, ""])
@@ -416,7 +408,7 @@ class LocationDistribution(GeoData):
 
     def __getitem__(self, name):
         return self.__dict__[name]
-
+    
     def __setitem__(self, name, value):
         self.__dict__[name] = value
         return self

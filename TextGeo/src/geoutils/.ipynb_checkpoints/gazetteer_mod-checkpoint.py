@@ -15,10 +15,10 @@ from . import GeoPoint, blacklist, loc_default, CountryDB, AdminDB, FEATURE_WEIG
 from .loc_config import reduce_stopwords, remove_administrativeNames, stop_words as STOP_WORDS
 # from pylru import lrudecorator
 import logging
-import pdb
+import ipdb
 from elasticsearch import Elasticsearch
-# from elasticsearch_dsl import Search
-# from elasticsearch_dsl import Search, Q
+from elasticsearch_dsl import Search
+from elasticsearch_dsl import Search, Q
 import numpy as np
 import re
 
@@ -298,71 +298,71 @@ class GeoNames(BaseGazetteer):
         return gpt
 
 
-# class Gazetteer(GeoNames):
-    # def __init__(self, db, **kwargs):
-        # self.conn = Search(using=Elasticsearch(urls='http://localhost', port=9200),
-                           # index='geonames', doc_type='places')
-        # self.tokenizer = re.compile(' |\||,|_|-')
-        # super(Gazetteer, self).__init__(db, **kwargs)
+class Gazetteer(GeoNames):
+    def __init__(self, db, **kwargs):
+        self.conn = Search(using=Elasticsearch(urls='http://localhost', port=9200),
+                           index='geonames', doc_type='places')
+        self.tokenizer = re.compile(' |\||,|_|-')
+        super(Gazetteer, self).__init__(db, **kwargs)
 
-    # def query_es(self, place, **filterargs):
-        # res = self.dbquery(place, **filterargs)
-        # if res.hits.total == 0:
-            # placetokens = [l.strip() for l in self.tokenizer.split(place) if l and l not in STOP_WORDS]
-            # reduced_placename = " ".join(placetokens)
-            # if len(placetokens[0]) <= 3 and len(placetokens) > 1 and 3.0 / len(placetokens) >= .5:
-                # reduced_placename = " ".join(placetokens[1:])
+    def query_es(self, place, **filterargs):
+        res = self.dbquery(place, **filterargs)
+        if res.hits.total == 0:
+            placetokens = [l.strip() for l in self.tokenizer.split(place) if l and l not in STOP_WORDS]
+            reduced_placename = " ".join(placetokens)
+            if len(placetokens[0]) <= 3 and len(placetokens) > 1 and 3.0 / len(placetokens) >= .5:
+                reduced_placename = " ".join(placetokens[1:])
 
-            # res = self.dbquery(reduced_placename, **filterargs)
-            # if res.hits.total == 0:
-                # res = self.dbquery(reduced_placename, fuzzy=2)
+            res = self.dbquery(reduced_placename, **filterargs)
+            if res.hits.total == 0:
+                res = self.dbquery(reduced_placename, fuzzy=2)
 
-        # return [GeoPoint(**r._d_) for r in res.hits]
+        return [GeoPoint(**r._d_) for r in res.hits]
 
-    # def query(self, name, **kwargs):
-        # name = name.strip().lower()
-        # #name = remove_administrativeNames(name.lower())
-        # if name in loc_default:
-            # name = loc_default[name]
+    def query(self, name, **kwargs):
+        name = name.strip().lower()
+        #name = remove_administrativeNames(name.lower())
+        if name in loc_default:
+            name = loc_default[name]
 
-        # if name in blacklist:
-            # return []
+        if name in blacklist:
+            return []
 
-        # country = self._querycountry(name)
-        # if country == []:
-            # admin = self._querystate(name, **kwargs)
-            # city_alt = self.query_es(name, **kwargs)
-        # else:
-            # admin, city_alt = [], []
+        country = self._querycountry(name)
+        if country == []:
+            admin = self._querystate(name, **kwargs)
+            city_alt = self.query_es(name, **kwargs)
+        else:
+            admin, city_alt = [], []
 
-        # ldist = (city_alt + country + admin)
-        # ldist = self._get_loc_confidence(ldist, 0)
-        # return ldist
+        ldist = (city_alt + country + admin)
+        ldist = self._get_loc_confidence(ldist, 0)
+        return ldist
 
-    # def dbquery(self, place, qtype='best_fields', **kwargs):
-        # q = {"multi_match": {"query": place,
-             # "fields": ['name^5', 'asciiname^5', 'alternativenames'],
-             # "type": qtype}
-            # }
-        # if 'fuzzy' in kwargs:
-            # q['multi_match'].pop("type")
-            # fuzzy = {"fuzziness": kwargs.pop('fuzzy', 0),
-                     # "max_expansions": kwargs.pop('max_expansion', 10),
-                     # "prefix_length": kwargs.pop('prefix_length', 1),
-                     # "operator": "and"}
-            # q['multi_match'].update(fuzzy)
+    def dbquery(self, place, qtype='best_fields', **kwargs):
+        q = {"multi_match": {"query": place,
+             "fields": ['name^5', 'asciiname^5', 'alternativenames'],
+             "type": qtype}
+            }
+        if 'fuzzy' in kwargs:
+            q['multi_match'].pop("type")
+            fuzzy = {"fuzziness": kwargs.pop('fuzzy', 0),
+                     "max_expansions": kwargs.pop('max_expansion', 10),
+                     "prefix_length": kwargs.pop('prefix_length', 1),
+                     "operator": "and"}
+            q['multi_match'].update(fuzzy)
 
-        # res = self.conn.query(q)
-        # if kwargs:
-            # if 'min_popln' in kwargs:
-                # res = res.filter("range", population={"gte": kwargs.pop("min_popln")})
-            # for item in kwargs:
-                # if not isinstance(kwargs[item], str):
-                    # qname = "terms"
-                # else:
-                    # qname = "term"
+        res = self.conn.query(q)
+        if kwargs:
+            if 'min_popln' in kwargs:
+                res = res.filter("range", population={"gte": kwargs.pop("min_popln")})
+            for item in kwargs:
+                if not isinstance(kwargs[item], str):
+                    qname = "terms"
+                else:
+                    qname = "term"
 
-                # res = res.filter(qname, **kwargs)
+                res = res.filter(qname, **kwargs)
 
-        # res = res[0:20].execute()
-        # return res
+        res = res[0:20].execute()
+        return res

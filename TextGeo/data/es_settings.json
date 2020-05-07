@@ -14,35 +14,28 @@
     }
     },
     "mappings" : {
-       "places" : {
         "properties" : {
           "id" : {"type" : "integer"},
-          "name" : {"type" : "text", "fields": {"raw": {"type": "keyword", "index": "not_analyzed"}}},
-          "asciiname" : {"type" : "text", "fields": {"raw": {"type": "string", "index": "not_analyzed"}}},
-          "alternatenames" : {"index": "not_analyzed", "type": "keyword"},
+          "name" : {"type" : "text", "fields": {"raw": {"type": "keyword"}}},
+          "asciiname" : {"type" : "text", "fields": {"raw": {"type": "keyword"}}},
+          "alternatenames" : {"type": "keyword"},
           "coordinates" : {"type" : "geo_point"},
-          "featureClass" :  {"type" : "text", "index": "not_analyzed"},
-          "featureCode" : {"type" : "text", "index": "not_analyzed"},
-          "countryCode" : {"type" : "text", "index": "not_analyzed"},
+          "featureClass" :  {"type" : "text"},
+          "featureCode" : {"type" : "text"},
+          "countryCode" : {"type" : "text"},
           "cc2" :  {"type" : "keyword"},
-          "admin1" : {"type": "text",
-                      "index":  "not_analyzed"},
-          "admin2" : {"type": "text",
-                      "index":  "not_analyzed"},
-          "admin3" : {"type": "text",
-                      "index":  "not_analyzed"},
-          "admin4" : {"type": "text",
-                      "index":  "not_analyzed"},
+          "admin1" : {"type": "text"},
+          "admin2" : {"type": "text"},
+          "admin3" : {"type": "text"},
+          "admin4" : {"type": "text"},
           "population" : {"type" :  "long"},
           "elevation" : {"type" :  "long"},
-          "dem" : {"type":  "long",
-                   "index": "not_analyzed"},
+          "dem" : {"type":  "long"},
           "timzeone" :  {"type" : "text",
-                         "index":  "not_analyzed"},
+                         "index":  "false"},
           "modification_date" : {"type" : "date",
                                  "format": "date",
-                                 "index": "not_analyzed"}
+                                 "index": "false"}
           }
-       }
    }
 }

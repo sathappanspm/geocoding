@@ -14,7 +14,7 @@ from workerpool import WorkerPool
 from geoutils.dbManager import ESWrapper
 from geocode import BaseGeo
 import json
-import ipdb
+import pdb
 
 db = ESWrapper(index_name="geonames", doc_type="places")
                #host="http://9899c246ngrok.io",
@@ -42,44 +42,48 @@ def encode(s):
     return s
 
 if __name__ == "__main__":
-    import sys
-    import argparse
-    from geoutils import smart_open
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cat", "-c", action='store_true',
-                        default=False, help="read from stdin")
-    parser.add_argument("-i", "--infile", type=str, help="input file")
-    parser.add_argument("-o", "--outfile", type=str, help="output file")
-    args = parser.parse_args()
+    # import sys
+    # import argparse
+    # from geoutils import smart_open
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument("--cat", "-c", action='store_true',
+    #                     default=False, help="read from stdin")
+    # parser.add_argument("-i", "--infile", type=str, help="input file")
+    # parser.add_argument("-o", "--outfile", type=str, help="output file")
+    # args = parser.parse_args()
 
     db = ESWrapper(index_name="geonames", doc_type="places")
     GEO = BaseGeo(db)
+    print(GEO.geocode_fromList(["US", "Arlington", "Virginia"], [])[0])
 
-    if args.cat:
-        infile = sys.stdin
-        outfile = sys.stdout
-    else:
-        infile = smart_open(args.infile)
-        outfile = smart_open(args.outfile, "wb")
+    print(GEO.gazetteer.db.near_geo([-77.06, 38.5249])[0].__dict__)
+    
 
-    lno = 0
-    # wp = WorkerPool(infile, outfile, partfunc, 500)
-    # wp.run()
-    for l in infile:
-        try:
-            #j = json.loads(l)
-            #j = GEO.annotate(j)
-            j=tmpfun(l)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-            if lno > 100:
-                break
-        except UnicodeEncodeError:
-            log.exception("Unable to readline")
-            continue
+    # if args.cat:
+        # infile = sys.stdin
+        # outfile = sys.stdout
+    # else:
+        # infile = smart_open(args.infile)
+        # outfile = smart_open(args.outfile, "wb")
 
-    if not args.cat:
-        infile.close()
-        outfile.close()
+    # lno = 0
+    # # wp = WorkerPool(infile, outfile, partfunc, 500)
+    # # wp.run()
+    # for l in infile:
+        # try:
+            # #j = json.loads(l)
+            # #j = GEO.annotate(j)
+            # j=tmpfun(l)
+            # #log.debug("geocoded line no:{}, {}".format(lno,
+            # #                                           encode(j.get("link", ""))))
+            # lno += 1
+            # outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+            # if lno > 100:
+                # break
+        # except UnicodeEncodeError:
+            # log.exception("Unable to readline")
+            # continue
+
+    # if not args.cat:
+        # infile.close()
+        # outfile.close()

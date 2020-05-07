@@ -27,7 +27,7 @@ def create(admin1csv, admin2csv, countryCsv, confDir="../data/"):
         admin1 = {}
         for l in acsv:
             if not l.startswith('#'):
-                row = dict(zip(columns, l.strip().decode('utf-8').split("\t")))
+                row = dict(zip(columns, l.strip().split("\t")))
                 admin1[row['key']] = row
                 row['admin1'] = row['name']
                 row['featureCode'] = 'ADM1'
@@ -44,7 +44,7 @@ def create(admin1csv, admin2csv, countryCsv, confDir="../data/"):
         countryInfo = {}
         for l in ccsv:
             if not l.startswith('#'):
-                row = dict(zip(columns, l.strip().decode('utf-8').split("\t")))
+                row = dict(zip(columns, l.strip().split("\t")))
                 countryInfo[row['ISO']] = row
                 row['featureCode'] = 'PCLI'
                 row['featureClass'] = 'A'
@@ -61,7 +61,7 @@ def create(admin1csv, admin2csv, countryCsv, confDir="../data/"):
         admin2 = {}
         for l in acsv:
             if not l.startswith('#'):
-                row = dict(zip(columns, l.strip().decode('utf-8').split("\t")))
+                row = dict(zip(columns, l.strip().split("\t")))
                 admin2[row['key']] = row
                 row['featureCode'] = 'ADM2'
                 row['featureClass'] = 'A'

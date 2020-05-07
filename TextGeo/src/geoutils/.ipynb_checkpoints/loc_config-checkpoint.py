@@ -10,7 +10,7 @@ administrativeNames = ['president', 'country', 'governorate', 'administrative',
 adminRegex = re.compile(r'\b' + r'\b|\b'.join(administrativeNames))
 
 with open(os.path.join(os.path.dirname(__file__), 'stopwords.txt')) as inf:
-    stop_words = set([l.strip() for l in inf])
+    stop_words = set([l.strip().decode("utf-8") for l in inf])
 
 
 def remove_stopwords(text):

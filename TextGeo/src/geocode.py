@@ -14,12 +14,12 @@ from workerpool import WorkerPool
 from geoutils.gazetteer_mod import GeoNames
 from geoutils.dbManager import ESWrapper
 from collections import defaultdict
-from urlparse import urlparse
+from urllib.parse import urlparse
 from geoutils import LocationDistribution
 import logging
 from geoutils import encode, isempty
 import json
-import ipdb
+import pdb
 import re
 from collections import Counter
 
@@ -105,7 +105,7 @@ class BaseGeo(object):
                                 if len(results[sub].realizations) == 1:
                                     realized_countries.append(list(results[sub].realizations.values())[0]['countryCode'].lower())
                             except UnicodeDecodeError:
-                                ipdb.set_trace()
+                                pdb.set_trace()
                             results[sub].frequency = 1
             except UnicodeDecodeError:
                 log.exception("Unable to make query for string - {}".format(encode(l)))
@@ -120,29 +120,30 @@ class BaseGeo(object):
 #             selco = []
         selco = list(set(realized_countries))
 
-        if selco not in (None, "", []):
+        if kwargs.get('doFuzzy', False) is True and selco not in (None, "", []):
             results = self.fuzzyquery(results, 
                                       countryFilter=selco)
 
         persons_res = {}
-        for entitem in persons:
-            querytext, _ = entitem
-            if querytext not in persons_res:
-                persons_res[querytext] = {"expansions": self._queryitem(querytext, "LOCATION", countryCode=selco),
-                                          "freq": 1}
-                if querytext not in results:
-                    results[querytext] = persons_res[querytext]['expansions']
-                    results[querytext].frequency = 1
-            else:
-                persons_res[querytext]["freq"] += 1
-                results[querytext].frequency += 1
+        if kwargs.get('includePersons', False) is True:
+            for entitem in persons:
+                querytext, _ = entitem
+                if querytext not in persons_res:
+                    persons_res[querytext] = {"expansions": self._queryitem(querytext, "LOCATION", countryCode=selco),
+                                              "freq": 1}
+                    if querytext not in results:
+                        results[querytext] = persons_res[querytext]['expansions']
+                        results[querytext].frequency = 1
+                else:
+                    persons_res[querytext]["freq"] += 1
+                    results[querytext].frequency += 1
             
         scores = self.score(results)
-        custom_max = lambda x: max(x.viewvalues(),
+        custom_max = lambda x: max(x.values(),
                                    key=lambda y: y['score'])
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
-        total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap])
+        total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap]) + 1e-3
         return lmap, max(lmap.items(),
                          key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
 
@@ -151,7 +152,7 @@ class BaseGeo(object):
         if itemtype == "LOCATION": 
             res = self.gazetteer.query(item, **kwargs)
         else:
-            res = self.gazetteer.query(item, fuzzy='AUTO', featureCode='pcli', operator='or')
+            res = self.gazetteer.query(item, fuzzy='AUTO' if kwargs.get('doFuzzy', False) else 0, featureCode='pcli', operator='or')
             if res == []:
                 res = self.gazetteer.query(item, featureCode='adm1', operator='or')
         
@@ -235,7 +236,7 @@ class BaseGeo(object):
             for s in l.country:
                 scoresheet[s] += l.country[s] * l.frequency
 
-        _ = [update(item) for item in results.viewvalues()]
+        _ = [update(item) for item in results.values()]
         for s in scoresheet:
             scoresheet[s] /= num_mentions
 
@@ -254,7 +255,7 @@ class BaseGeo(object):
 
         def get_realization_score(l):
             lscore_map = {}
-            for lstr, r in l.realizations.viewitems():
+            for lstr, r in l.realizations.items():
                 base_score = scores[lstr]
                 #if r.ltype == 'city':
                 if not isempty(r.city):
@@ -341,7 +342,7 @@ class TextGeo(object):
         loc_results.update(self.query_gazetteer(self.group(locTexts)))
 
         scores = self.score(loc_results)
-        custom_max = lambda x: max(x.realizations.viewvalues(),
+        custom_max = lambda x: max(x.realizations.values(),
                                    key=lambda x: scores[x.__str__()])
         lmap = {l: custom_max(loc_results[l]['geo-point']) for l in loc_results
                 if not loc_results[l]['geo-point'].isEmpty()}
@@ -363,7 +364,7 @@ class TextGeo(object):
             for s in l.country:
                 scoresheet[s] += l.country[s] * freq
 
-        [update(item) for item in results.viewvalues()]
+        [update(item) for item in results.values()]
         return scoresheet
 
     def query_gazetteer(self, lgroups):
@@ -444,8 +445,8 @@ def tmpfun(doc):
         msg = json.loads(doc)
         msg = GEO.annotate(msg, enrichmentKeys=['BasisEnrichment', ''])
         return msg
-    except:
-        print("error")
+    except Exception as e:
+        print("error-{}".format(str(e)))
 
 
 if __name__ == "__main__":
@@ -470,20 +471,20 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    # wp = WorkerPool(infile, outfile, tmpfun, 200)
-    # wp.run()
-    for l in infile:
-        try:
-            j = json.loads(l)
-            j = GEO.annotate(j)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-        except UnicodeEncodeError:
-            ipdb.set_trace()
-            log.exception("Unable to readline")
-            continue
+    wp = WorkerPool(infile, outfile, tmpfun, 500)
+    wp.run()
+    # for l in infile:
+        # try:
+            # j = json.loads(l)
+            # j = GEO.annotate(j)
+            # #log.debug("geocoded line no:{}, {}".format(lno,
+            # #                                           encode(j.get("link", ""))))
+            # lno += 1
+            # outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+        # except UnicodeEncodeError:
+            # ipdb.set_trace()
+            # log.exception("Unable to readline")
+    #         continue
 
     if not args.cat:
         infile.close()

@@ -6,12 +6,7 @@
     Last Modified:
 """
 
-try:
-    import ipdb as pdb
-except:
-    import pdb
-
-from copy import copy
+import ipdb
 #import csv as unicodecsv
 import unicodecsv
 import sqlite3
@@ -21,7 +16,7 @@ import os
 # from time import sleep
 from . import GeoPoint, safe_convert, isempty
 import json
-from elasticsearch import Elasticsearch, helpers
+from pyelasticsearch import bulk_chunks, ElasticSearch
 import gzip
 import zipfile
 import re
@@ -64,8 +59,8 @@ class DataReader(object):
 
         return cols
 
-    def __next__(self):
-        row = dict(zip(self.columns, self.dataFile.__next__().strip().split("\t")))
+    def next(self):
+        row = dict(zip(self.columns, self.dataFile.next().decode("utf-8").strip().split("\t")))
         return row
 
     def __iter__(self):
@@ -83,7 +78,7 @@ class DataReader(object):
 
 class ESWrapper(BaseDB):
     def __init__(self, index_name, doc_type, host='http://localhost', port=9200):
-        self.eserver = Elasticsearch(hosts=host, port=port,
+        self.eserver = ElasticSearch(urls=host, port=port,
                                      timeout=60, max_retries=3)
         #self._base_query = {"query": {"bool": {"must": {"match": {}}}}}
         #self._base_query = {"query": {"bool": {}}}
@@ -100,7 +95,7 @@ class ESWrapper(BaseDB):
     def _query(self, qkey, **kwargs):
         q = {"query": {"bool": {}}}
         query_name = "should"
-        q["query"]["bool"]["minimum_should_match"] = 1
+        q["query"]["bool"]["minimum_number_should_match"] = 1
         kwargs.pop("qtype", "")
 
         placetokens = [l.strip() for l in tokenizer.split(qkey) if l and l not in STOP_WORDS and l[-1] != '.']
@@ -122,8 +117,8 @@ class ESWrapper(BaseDB):
              # {"term": {"alternatenames": {"value": qkey[1:]}}},
              {"term": {"alternatenames": {"value": qkey}}},
              # {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else unicode(unidecode(reduced_placename)),
-
-             {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else (unidecode(reduced_placename)),
+                              
+             {"multi_match": {"query": reduced_placename if 'fuzzy' in kwargs else unicode(unidecode(reduced_placename)),
                              'fuzziness': kwargs.pop("fuzzy", 0),
                              "max_expansions": kwargs.pop("max_expansion", 10),
                              "prefix_length": kwargs.pop("prefix_length", 1),
@@ -141,7 +136,7 @@ class ESWrapper(BaseDB):
                 if popln is not None:
                     filter_cond.append({"range": {"population": {"gte": popln}}})
 
-            for key, val in kwargs.items():
+            for key, val in kwargs.viewitems():
                 if not isinstance(val, basestring):
                     val = list([(v) for v in val])
                     filter_cond.append({"terms": {key: val}})
@@ -152,7 +147,7 @@ class ESWrapper(BaseDB):
 
         q['from'] = 0
         q['size'] = 50
-        return self.eserver.search(q, index=self._index)
+        return self.eserver.search(q, index=self._index, doc_type=self._doctype)
 
     def query(self, qkey, min_popln=None, **kwargs):
         #res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']['hits']
@@ -184,7 +179,99 @@ class ESWrapper(BaseDB):
 
         return gps
 
-    def near_geo(self, geo_point, min_popln=5000, limit=1, sort=True, **kwargs):
+    def _oldquery(self, qkey, qtype="exact", analyzer=None, min_popln=None, size=10, **kwargs):
+        """
+        qtype values are exact, relaxed or geo_distance
+        Always limit results to 10
+        """
+        q = {"query": {"bool": {}}}
+        query_name = kwargs.pop('query_name', 'must')
+        query_name = "should"
+        if query_name == "should":
+            q["query"]["bool"]["minimum_number_should_match"] = 1
+
+        maincondition = {}
+        if qtype == "exact":
+            maincondition = [{"term": {"name.raw": {"value": qkey}}},
+                             {"term": {"asciiname.raw": {"value": qkey}}},
+                             {"term": {"alternatenames": {"value": qkey}}}
+                             ]
+            if analyzer:
+                maincondition["match"]["name.raw"]["analyzer"] = analyzer
+
+        elif qtype == "relaxed":
+            maincondition["match"] = {"alternatenames": {"query": qkey}}
+            if analyzer:
+                maincondition["match"]["alternatenames"]["analyzer"] = analyzer
+
+            #q["query"]["bool"][query_name]["match"].pop("name.raw", "")
+        elif qtype == "combined":
+            maincondition = [
+                {"bool": {"must": {"multi_match": {"query": qkey, "fields": ["name.raw", "asciiname", "alternatenames"]}},
+                           "filter": {"bool": {"should": [{"range": {"population": {"gte": 5000}}},
+                                                      {"terms": {"featureCode": ["pcla", "pcli", "cont",
+                                                                                 "rgn", "admd", "adm1", "adm2"]}}]}}}},
+                 {"term": {"name.raw": {"value": qkey}}},
+                 {"term": {"asciiname.raw": {"value": qkey}}},
+                 {"term": {"alternatenames": {"value": qkey[1:]}}},
+                 {"match": {"alternatenames": {"query": qkey,
+                                               'fuzziness': kwargs.pop("fuzzy", 0),
+                                               "max_expansions": kwargs.pop("max_expansion", 5),
+                                               "prefix_length": kwargs.pop("prefix_length", 1)}}}
+
+              ]
+
+        if maincondition:
+            q["query"]["bool"][query_name] = maincondition
+
+            if min_popln:
+                filter_cond = [{"range": {"population": {"gte": min_popln}}}]
+            else:
+                filter_cond = []
+
+            if kwargs:
+                #filter_cond = [{"range": {"population": {"gte": min_popln}}}]
+                filter_cond += [{"term": {key:val}} for key, val in kwargs.viewitems()]
+                # print(filter_cond)
+                q["query"]["bool"]["filter"] = {"bool": {"must": filter_cond}}
+            elif min_popln:
+                filter_cond = [{"range": {"population": {"gte": min_popln}}},
+                                {"terms": {"featureCode": ["ppla", "pplx"]}}]
+
+                q["query"]["bool"]["filter"] = {"bool": {"should": filter_cond}}
+
+        return self.eserver.search(q, index=self._index, doc_type=self._doctype)
+
+    def oldquery(self, qkey, min_popln=None, **kwargs):
+        #res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']['hits']
+        res = self._query(qkey, min_popln=min_popln, **kwargs)['hits']
+        #max_score = sum([r['_score'] for r in res])
+        max_score =  res['max_score']#sum([r['_score'] for r in res])
+        #for t in res:
+        gps = []
+        if max_score == 0.0:
+            ## no results were obtained by elasticsearch instead it returned a random/very
+            ## low scoring one
+            res['hits'] = []
+
+        for t in res['hits']:
+            t['_source']['geonameid'] = t["_source"]["id"]
+            #t['_source']['_score'] = t[1] / max_score
+            t['_source']['_score'] = t['_score'] / max_score
+            pt = GeoPoint(**t["_source"])
+            if t['_source']['featureCode'].lower() == "cont":
+                gps = [pt]
+                break
+
+            gps.append(pt)
+
+        if len(gps) == 1:
+            gps[0]._score = (min(float(len(gps[0].name)),float(len(qkey)))
+                                /max(float(len(gps[0].name)),float(len(qkey))))
+
+        return gps
+
+    def near_geo(self, geo_point, min_popln=5000, **kwargs):
         q2 = {"query": {"bool" : {"must" : {"match_all" : {}},
                                  "filter" : [{
                                      "geo_distance" : {
@@ -201,48 +288,34 @@ class ESWrapper(BaseDB):
                                  ]
                                 }
                       },
-                      #"sort": {"population": "desc"}
+                      "sort": {"population": "desc"}
             }
-
-        if sort is True:
-            q2['sort'] = {"population": "desc"}
-
         if kwargs:
             for key in kwargs:
                 q2['query']['bool']['filter'].append({"term":{key: kwargs[key]}})
 
-        q2['size'] = limit
-        res = self.eserver.search(q2, index=self._index)['hits']['hits']
-
-        if limit == 1:
-            res = res[0]['_source']
-            res['confidence'] = 1.0
-            return [GeoPoint(**res)]
-
-
-        gps = []
-        for t in res:
-            t['_source']['geonameid'] = t["_source"]["id"]
-            #t['_source']['_score'] = t[1] / max_score
-            t['_source']['_score'] = t['_score']
-            pt = GeoPoint(**t["_source"])
-            if t['_source']['featureCode'].lower() == "cont":
-                gps = [pt]
-                break
-
-            gps.append(pt)
-
-        # res['confidence'] = 1.0
-        return gps
+        res = self.eserver.search(q2, index=self._index,
+                                  doc_type=self._doctype)['hits']['hits'][0]['_source']
+        res['confidence'] = 1.0
+        return [GeoPoint(**res)]
 
     def create(self, datacsv, confDir="../data/"):
         with open(os.path.join(confDir, "es_settings.json")) as jf:
             settings = json.load(jf)
             settings['mappings'][self._doctype] = settings['mappings'].pop('places')
 
-        opres = self._opLoader(datacsv, confDir)
-        helpers.bulk(self.eserver, opres, chunk_size=1000)
-        self.eserver.indices.refresh(self._index)
+        try:
+            self.eserver.create_index(index=self._index, settings=settings)
+        except:
+            self.eserver.delete_index(self._index)
+            self.eserver.create_index(index=self._index, settings=settings)
+
+        for chunk in bulk_chunks(self._opLoader(datacsv, confDir),
+                                 docs_per_chunk=1000):
+            self.eserver.bulk(chunk, index=self._index, doc_type=self._doctype)
+            print "..",
+
+        self.eserver.refresh(self._index)
 
     def _opLoader(self, datacsv, confDir):
         ere = re.compile("[^\sa-zA-Z0-9]")
@@ -250,7 +323,7 @@ class ESWrapper(BaseDB):
             cnt = 0
             for row in reader:
                 try:
-                    row['coordinates'] = '{},{}'.format(row['latitude'],row['longitude'])
+                    row['coordinates'] = [float(row['longitude']), float(row['latitude'])]
                     try:
                         row['population'] = int(row["population"])
                     except:
@@ -263,28 +336,23 @@ class ESWrapper(BaseDB):
 
                     del(row['latitude'])
                     del(row['longitude'])
+                    #print row['name']
                     row['alternatenames'] = row['alternatenames'].lower().split(",")
                     row['normalized_asciiname'] = (re.sub(r'\s+', r' ', ere.sub("", row['asciiname']))).strip()
                     cnt += 1
-                    action = {'_source': row,
-                              '_index': self._index,
-                              #'_type': self._doctype,
-                              }
-                    yield action
-                except Exception as e:
-                    print('error ', str(e))
-                    #print(json.dumps(row))
+                    yield self.eserver.index_op(row, index=self._index, doc_type=self._doctype)
+                except:
+                    print json.dumps(row)
                     continue
-
-
+                    
     def remove_dynamic_stopwords(self, term):
         # cc = {}
         # ttl = 0
         words = [w for t in term.split("-") for w in t.split() if len(w) > 1]
-
+        
         if len(words) == 1:
             return term
-
+        
         stopword_removed = ""
         for word in words:
             try:
@@ -293,13 +361,13 @@ class ESWrapper(BaseDB):
                     continue
             except:
                 pass
-
+            
             stopword_removed += (word + " ")
             # else:
             #     print(term, "stopword ", word)
-
+        
         return stopword_removed.strip()
-
+        
 
 
 def main(args):
