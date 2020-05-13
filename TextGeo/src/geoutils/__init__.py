@@ -132,7 +132,7 @@ class COUNTRY_INFO(dict):
         with open(path) as inf:
             self.code2name = json.load(inf)
 
-        data = {l['country'].lower(): l for l in self.code2name.values()}
+        data = {l['country'].lower(): l for l in list(self.code2name.values())}
         data['palestine'] = data['palestinian territory']
         data['united states of america'] = data['united states']
         super(COUNTRY_INFO, self).__init__(data)
@@ -162,7 +162,7 @@ class ADMIN2_INFO(dict):
         super(ADMIN2_INFO, self).__init__(data)
 
     def query(self, country, state, district):
-        name = u"{}.{}.{}".format(country, state, district).upper()
+        name = "{}.{}.{}".format(country, state, district).upper()
         if name in self:
             return self[name]['name']
         else:
@@ -173,9 +173,9 @@ class ADMIN2_INFO(dict):
         returns unicode string of format country.state.district
         """
         try:
-            name = u"{}.{}.{}".format(country, state, district)
+            name = "{}.{}.{}".format(country, state, district)
         except UnicodeDecodeError:
-            name = u"{}.{}.{}".format(decode(country), decode(state),
+            name = "{}.{}.{}".format(decode(country), decode(state),
                                       decode(district))
         return name
 
@@ -192,37 +192,37 @@ class ADMIN_INFO(dict):
         self.code2name = code2name
         if 'BH.18' not in self.code2name:
             self.code2name['BH.18'] = {'_score': 0.5789473684210527,
-                                       'admin1': u'central governorate',
+                                       'admin1': 'central governorate',
                                        'admin2': '',
-                                       'admin3': u'',
-                                       'admin4': u'',
-                                       'alternatenames': [u'central governorate',
-                                                          u'al muhafazah al wusta',
-                                                          u'al mu\u1e29\u0101faz\u0327ah al wus\u0163\xe1',
-                                                          u'almhafzt alwsty',
-                                                          u'\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629 \u0627\u0644\u0648\u0633\u0637\u0649'],
-                                       'asciiname': u'central governorate',
-                                       'cc2': u'',
+                                       'admin3': '',
+                                       'admin4': '',
+                                       'alternatenames': ['central governorate',
+                                                          'al muhafazah al wusta',
+                                                          'al mu\u1e29\u0101faz\u0327ah al wus\u0163\xe1',
+                                                          'almhafzt alwsty',
+                                                          '\u0627\u0644\u0645\u062d\u0627\u0641\u0638\u0629 \u0627\u0644\u0648\u0633\u0637\u0649'],
+                                       'asciiname': 'central governorate',
+                                       'cc2': '',
                                        'city': '',
                                        'confidence': 0.5789473684210527,
                                        'coordinates': [50.56667, 26.16667],
-                                       'country': u'Bahrain',
-                                       'countryCode': u'bh',
-                                       'dem': u'6',
+                                       'country': 'Bahrain',
+                                       'countryCode': 'bh',
+                                       'dem': '6',
                                        'elevation': -1,
-                                       'featureClass': u'a',
-                                       'featureCode': u'adm1h',
-                                       'geonameid': u'7090973',
-                                       'id': u'7090973',
+                                       'featureClass': 'a',
+                                       'featureCode': 'adm1h',
+                                       'geonameid': '7090973',
+                                       'id': '7090973',
                                        'ltype': 'admin1',
-                                       'modificationDate': u'2017-03-21',
-                                       'name': u'central governorate',
+                                       'modificationDate': '2017-03-21',
+                                       'name': 'central governorate',
                                        'population': 0,
-                                       'timezone': u'asia/bahrain',
+                                       'timezone': 'asia/bahrain',
                                        'key': 'bh.18'}
 
-        data = {val['name'].lower(): val for val in code2name.values()}
-        data.update({val['asciiname'].lower(): val for val in code2name.values()})
+        data = {val['name'].lower(): val for val in list(code2name.values())}
+        data.update({val['asciiname'].lower(): val for val in list(code2name.values())})
         super(ADMIN_INFO, self).__init__(data)
 
     def query(self, name):
@@ -296,7 +296,7 @@ class GeoPoint(GeoData):
         """
         print country/admin/city string
         """
-        return u"/".join([self.country, decode(self.admin1),
+        return "/".join([self.country, decode(self.admin1),
                           decode(self.city)])
 
     def _get_ltype(self, info):
@@ -405,7 +405,7 @@ class LocationDistribution(GeoData):
             self.country[cstr] = max(self.country[cstr], 0.49)
             self.admin1[adminstr] = max(self.admin1[adminstr], .7)
 
-    def __nonzero__(self):
+    def __bool__(self):
         return self.realizations != {}
 
     def isempty(self):
