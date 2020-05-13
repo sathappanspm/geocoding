@@ -90,12 +90,12 @@ class ESWrapper(BaseDB):
         self._geo_filter = {"distance": "20km", "coordinates": {}}
         self._population_filter = {'population': {'gte': 5000}}
         self._index = index_name
-        self._doctype = doc_type
+        #self._doctype = doc_type
 
     def getByid(self,geonameId):
         maincondition = {"match": {"id": geonameId}}
         q = {"query": {"bool": {"must": maincondition}}}
-        return self.eserver.search(q, index=self._index, doc_type=self._doctype)['hits']['hits'][0]['_source']
+        return self.eserver.search(q, index=self._index)['hits']['hits'][0]['_source']
 
     def _query(self, qkey, **kwargs):
         q = {"query": {"bool": {}}}
