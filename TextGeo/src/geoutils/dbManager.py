@@ -142,7 +142,7 @@ class ESWrapper(BaseDB):
                     filter_cond.append({"range": {"population": {"gte": popln}}})
 
             for key, val in kwargs.items():
-                if not isinstance(val, basestring):
+                if not isinstance(val, str):
                     val = list([(v) for v in val])
                     filter_cond.append({"terms": {key: val}})
                 else:

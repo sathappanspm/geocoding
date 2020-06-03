@@ -34,15 +34,32 @@ log = logging.getLogger("rssgeocoder")
 
 
 class BaseGeo(object):
-    def __init__(self, db, min_popln=0, min_length=1):
+    def __init__(self, db, min_popln=0, min_length=1, spacy=False, nerKeyMap=None):
+
+        DEFAULT_NER_MAP = {'LOCATION': 'LOCATION', 'ORGANIZATION': 'ORGANIZATION',
+                'NATIONALITY': 'NATIONALITY', 'OTHER': 'OTHER', 'PERSON': 'PERSON'}
+
+        if nerKeyMap is None:
+            nerKeyMap = DEFAULT_NER_MAP
+        else:
+            for key in DEFAULT_NER_MAP:
+                if key not in nerKeyMap:
+                    nerKeyMap[key] = DEFAULT_NER_MAP[key]
+
+        if spacy is True:
+            nerKeyMap['LOCATION'] = 'GPE'
+            nerKeyMap['NATIONALITY'] = 'NORP'
+            nerKeyMap['ORGANIZATION'] = 'ORG'
+
+        self.nerKeyMap = nerKeyMap
         self.gazetteer = GeoNames(db)
         self.min_popln = min_popln
         self.min_length = min_length
         self.weightage = {
-            "LOCATION": 1.0,
-            "NATIONALITY": 0.75,
-            "ORGANIZATION": 0.5,
-            "OTHER": 0.0
+            nerKeyMap["LOCATION"]: 1.0,
+            nerKeyMap["NATIONALITY"]: 0.75,
+            nerKeyMap["ORGANIZATION"]: 0.5,
+            nerKeyMap["OTHER"]: 0.0
         }
 
     def geocode(self, doc=None, loclist=None, eKey='BasisEnrichment', **kwargs):
@@ -61,7 +78,7 @@ class BaseGeo(object):
                         l['neType'])
                         for l in
                         doc[eKey]["entities"]
-                        if ((l["neType"] == "PERSON") and
+                        if ((l["neType"] == self.nerKeyMap["PERSON"]) and
                         len(l['expr']) >= self.min_length)]
 
         if loclist is not None:
@@ -89,7 +106,7 @@ class BaseGeo(object):
                 itype[l[0]] = l[1]
                 l = l[0]
             else:
-                itype[l] = 'LOCATION'
+                itype[l] = self.nerKeyMap['LOCATION']
             try:
                 if l in results:
                     results[l].frequency += 1
@@ -109,7 +126,7 @@ class BaseGeo(object):
                             results[sub].frequency = 1
             except UnicodeDecodeError:
                 log.exception("Unable to make query for string - {}".format(encode(l)))
-        
+
 #         realized_countries = Counter(realized_countries)
 #         co_realized = float(sum(realized_countries.values()))
 #         selco = [kl for kl, vl in realized_countries.viewitems()
@@ -121,7 +138,7 @@ class BaseGeo(object):
         selco = list(set(realized_countries))
 
         if kwargs.get('doFuzzy', False) is True and selco not in (None, "", []):
-            results = self.fuzzyquery(results, 
+            results = self.fuzzyquery(results,
                                       countryFilter=selco)
 
         persons_res = {}
@@ -137,7 +154,7 @@ class BaseGeo(object):
                 else:
                     persons_res[querytext]["freq"] += 1
                     results[querytext].frequency += 1
-            
+
         scores = self.score(results)
         custom_max = lambda x: max(x.values(),
                                    key=lambda y: y['score'])
@@ -147,15 +164,15 @@ class BaseGeo(object):
         return lmap, max(lmap.items(),
                          key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
 
-    
+
     def _queryitem(self, item, itemtype, **kwargs):
-        if itemtype == "LOCATION": 
+        if itemtype == self.nerKeyMap["LOCATION"]:
             res = self.gazetteer.query(item, **kwargs)
         else:
             res = self.gazetteer.query(item, fuzzy='AUTO' if kwargs.get('doFuzzy', False) else 0, featureCode='pcli', operator='or')
             if res == []:
                 res = self.gazetteer.query(item, featureCode='adm1', operator='or')
-        
+
         return LocationDistribution(res)
 
     def get_locations_fromURL(self, url):
