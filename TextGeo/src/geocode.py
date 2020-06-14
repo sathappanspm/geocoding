@@ -120,29 +120,30 @@ class BaseGeo(object):
 #             selco = []
         selco = list(set(realized_countries))
 
-        if selco not in (None, "", []):
+        if kwargs.get('doFuzzy', False) is True and selco not in (None, "", []):
             results = self.fuzzyquery(results, 
                                       countryFilter=selco)
 
         persons_res = {}
-        for entitem in persons:
-            querytext, _ = entitem
-            if querytext not in persons_res:
-                persons_res[querytext] = {"expansions": self._queryitem(querytext, "LOCATION", countryCode=selco),
-                                          "freq": 1}
-                if querytext not in results:
-                    results[querytext] = persons_res[querytext]['expansions']
-                    results[querytext].frequency = 1
-            else:
-                persons_res[querytext]["freq"] += 1
-                results[querytext].frequency += 1
+        if kwargs.get('includePersons', False) is True:
+            for entitem in persons:
+                querytext, _ = entitem
+                if querytext not in persons_res:
+                    persons_res[querytext] = {"expansions": self._queryitem(querytext, "LOCATION", countryCode=selco),
+                                              "freq": 1}
+                    if querytext not in results:
+                        results[querytext] = persons_res[querytext]['expansions']
+                        results[querytext].frequency = 1
+                else:
+                    persons_res[querytext]["freq"] += 1
+                    results[querytext].frequency += 1
             
         scores = self.score(results)
         custom_max = lambda x: max(x.viewvalues(),
                                    key=lambda y: y['score'])
         lrank = self.get_locRanks(scores, results)
         lmap = {l: custom_max(lrank[l]) for l in lrank if not lrank[l] == {}}
-        total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap])
+        total_weight = sum([self.weightage[itype.get(key, 'OTHER')] for key in lmap]) + 1e-3
         return lmap, max(lmap.items(),
                          key=lambda x: x[1]['score'] * self.weightage[itype.get(x[0], 'OTHER')] / total_weight)[1]['geo_point'] if scores else {}
 
@@ -151,7 +152,7 @@ class BaseGeo(object):
         if itemtype == "LOCATION": 
             res = self.gazetteer.query(item, **kwargs)
         else:
-            res = self.gazetteer.query(item, fuzzy='AUTO', featureCode='pcli', operator='or')
+            res = self.gazetteer.query(item, fuzzy='AUTO' if kwargs.get('doFuzzy', False) else 0, featureCode='pcli', operator='or')
             if res == []:
                 res = self.gazetteer.query(item, featureCode='adm1', operator='or')
         
@@ -444,8 +445,8 @@ def tmpfun(doc):
         msg = json.loads(doc)
         msg = GEO.annotate(msg, enrichmentKeys=['BasisEnrichment', ''])
         return msg
-    except:
-        print("error")
+    except Exception as e:
+        print("error-{}".format(str(e)))
 
 
 if __name__ == "__main__":
@@ -470,20 +471,20 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    # wp = WorkerPool(infile, outfile, tmpfun, 200)
-    # wp.run()
-    for l in infile:
-        try:
-            j = json.loads(l)
-            j = GEO.annotate(j)
-            #log.debug("geocoded line no:{}, {}".format(lno,
-            #                                           encode(j.get("link", ""))))
-            lno += 1
-            outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
-        except UnicodeEncodeError:
-            ipdb.set_trace()
-            log.exception("Unable to readline")
-            continue
+    wp = WorkerPool(infile, outfile, tmpfun, 500)
+    wp.run()
+    # for l in infile:
+        # try:
+            # j = json.loads(l)
+            # j = GEO.annotate(j)
+            # #log.debug("geocoded line no:{}, {}".format(lno,
+            # #                                           encode(j.get("link", ""))))
+            # lno += 1
+            # outfile.write(encode(json.dumps(j, ensure_ascii=False) + "\n"))
+        # except UnicodeEncodeError:
+            # ipdb.set_trace()
+            # log.exception("Unable to readline")
+    #         continue
 
     if not args.cat:
         infile.close()
