@@ -47,27 +47,29 @@ class BaseGeo(object):
                     nerKeyMap[key] = DEFAULT_NER_MAP[key]
 
         if spacy is True:
-            nerKeyMap['LOCATION'] = 'GPE'
-            nerKeyMap['NATIONALITY'] = 'NORP'
-            nerKeyMap['ORGANIZATION'] = 'ORG'
+            nerKeyMap['GPE'] = 'LOCATION'
+            nerKeyMap['NORP'] = 'NATIONALITY'
+            nerKeyMap['ORG'] = 'ORGANIZATION'
+            nerKeyMap['LOC'] = 'LOCATION'
 
         self.nerKeyMap = nerKeyMap
         self.gazetteer = GeoNames(db)
         self.min_popln = min_popln
         self.min_length = min_length
         self.weightage = {
-            nerKeyMap["LOCATION"]: 1.0,
-            nerKeyMap["NATIONALITY"]: 0.75,
-            nerKeyMap["ORGANIZATION"]: 0.5,
-            nerKeyMap["OTHER"]: 0.0
+            "LOCATION": 1.0,
+            "NATIONALITY": 0.75,
+            "ORGANIZATION": 0.5,
+            "OTHER": 0.0,
+            "PERSON": 0.0
         }
 
     def geocode(self, doc=None, loclist=None, eKey='BasisEnrichment', **kwargs):
         locTexts = []
-        NAMED_ENTITY_TYPES_TO_CHECK = [key for key in self.weightage if self.weightage[key] > 0]
+        NAMED_ENTITY_TYPES_TO_CHECK = [key for key in self.nerKeyMap if self.weightage[self.nerKeyMap[key]] > 0]
         if doc is not None:
             # Get all location entities from document with atleast min_length characters
-            locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), l['neType']) for l in
+            locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), self.nerKeyMap[l['neType']]) for l in
                          doc[eKey]["entities"]
                          if ((l["neType"] in NAMED_ENTITY_TYPES_TO_CHECK) and
                              len(l['expr']) >= self.min_length)]
@@ -75,10 +77,10 @@ class BaseGeo(object):
             # locTexts += [(numstrip.sub("", l['expr'].lower()).strip(), 'OTHER') for l in
                          # doc['BasisEnrichment']['nounPhrases']]
             persons = [(numstrip.sub("", l['expr'].lower()).strip(),
-                        l['neType'])
+                        self.nerKeyMap[l['neType']])
                         for l in
                         doc[eKey]["entities"]
-                        if ((l["neType"] == self.nerKeyMap["PERSON"]) and
+                        if ((self.nerKeyMap.get(l["neType"], 'UNKNOWN') == "PERSON") and
                         len(l['expr']) >= self.min_length)]
 
         if loclist is not None:
@@ -106,7 +108,7 @@ class BaseGeo(object):
                 itype[l[0]] = l[1]
                 l = l[0]
             else:
-                itype[l] = self.nerKeyMap['LOCATION']
+                itype[l] = 'LOCATION'
             try:
                 if l in results:
                     results[l].frequency += 1
@@ -166,12 +168,12 @@ class BaseGeo(object):
 
 
     def _queryitem(self, item, itemtype, **kwargs):
-        if itemtype == self.nerKeyMap["LOCATION"]:
+        if itemtype == "LOCATION":
             res = self.gazetteer.query(item, **kwargs)
         else:
             res = self.gazetteer.query(item, fuzzy='AUTO' if kwargs.get('doFuzzy', False) else 0, featureCode='pcli', operator='or')
-            if res == []:
-                res = self.gazetteer.query(item, featureCode='adm1', operator='or')
+            # if res == []:
+            #    res = self.gazetteer.query(item)
 
         return LocationDistribution(res)
 

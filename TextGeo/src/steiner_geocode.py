@@ -39,13 +39,38 @@ FEATURE_WEIGHTS = {'adm1': 2, 'adm2': 3, 'adm3': 4, 'adm4': 4, 'ppla2': 4, 'ppla
 
 
 class SteinerGeo():
-    def __init__(self, db):
+    def __init__(self, db, nerKeyMap=None, spacy=False):
         self.gazetteer = GeoNames(db, confMethod='Uniform', escore=False)
+        DEFAULT_NER_MAP = {'LOCATION': 'LOCATION', 'ORGANIZATION': 'ORGANIZATION',
+                'NATIONALITY': 'NATIONALITY', 'OTHER': 'OTHER', 'PERSON': 'PERSON'}
+
+        if nerKeyMap is None:
+            nerKeyMap = DEFAULT_NER_MAP
+        else:
+            for key in DEFAULT_NER_MAP:
+                if key not in nerKeyMap:
+                    nerKeyMap[key] = DEFAULT_NER_MAP[key]
+
+        if spacy is True:
+            nerKeyMap['GPE'] = 'LOCATION'
+            nerKeyMap['NORP'] = 'NATIONALITY'
+            nerKeyMap['ORG'] = 'ORGANIZATION'
+            nerKeyMap['LOC'] = 'LOCATION'
+
+        self.nerKeyMap = nerKeyMap
+        self.weightage = {
+            "LOCATION": 1.0,
+            "NATIONALITY": 0.75,
+            "ORGANIZATION": 0.5,
+            "OTHER": 0.0,
+            "PERSON": 0.0
+        }
 
     def geocode(self, doc):
         entities = defaultdict(list)
-        _ = [entities[l['neType']].extend((x.strip() for x in numstrip.sub("", l['expr']).split(",")))
-             for l in doc['BasisEnrichment']['entities'] if len(l['expr']) > 2]
+        NAMED_ENTITY_TYPES_TO_CHECK = [key for key in self.nerKeyMap if self.weightage[self.nerKeyMap[key]] > 0]
+        _ = [entities[self.nerKeyMap[l['neType']]].extend((x.strip() for x in numstrip.sub("", l['expr']).split(",")))
+             for l in doc['BasisEnrichment']['entities'] if (len(l['expr']) > 2) and (l['neType'] in NAMED_ENTITY_TYPES_TO_CHECK) ]
 
         idmap = {}
         cc = set()
@@ -94,7 +119,7 @@ class SteinerGeo():
     def annotate(self, doc):
         #stG, locdist
         stG, locdist, focus = self.geocode(doc)
-        doc['location_distribution'] = {loc: locdist[loc]['expansions'][stG.neighbors(unidecode(loc+u"T0")).next()].__dict__ for loc in locdist if locdist[loc]['expansions']}
+        doc['location_distribution'] = {loc: locdist[loc]['expansions'][stG.neighbors(unidecode(loc+u"T0")).__next__()].__dict__ for loc in locdist if locdist[loc]['expansions']}
         if focus:
             doc['embersGeoCode'] = doc['location_distribution'][focus[0][:-2]]
         else:
@@ -121,6 +146,9 @@ class SteinerGeo():
 
                 G.add_weighted_edges_from(edges)
                 terminalNodes.append(nodename)
+
+        if G.number_of_nodes() == 0:
+            return G, []
 
         stG = approximation.steiner_tree(G.to_undirected(), terminalNodes)
         def ego_nw_degree(degree, node):

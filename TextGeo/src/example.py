@@ -12,7 +12,7 @@ __version__ = "0.0.1"
 
 from workerpool import WorkerPool
 from geoutils.dbManager import ESWrapper
-from geocode import BaseGeo
+from geocode import BaseGeo, tmpfun
 import json
 import pdb
 
@@ -42,33 +42,44 @@ def encode(s):
     return s
 
 if __name__ == "__main__":
-    # import sys
-    # import argparse
-    # from geoutils import smart_open
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument("--cat", "-c", action='store_true',
-    #                     default=False, help="read from stdin")
-    # parser.add_argument("-i", "--infile", type=str, help="input file")
-    # parser.add_argument("-o", "--outfile", type=str, help="output file")
-    # args = parser.parse_args()
+    import sys
+    import argparse
+    from geoutils import smart_open
+    from steiner_geocode import SteinerGeo
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cat", "-c", action='store_true',
+                         default=False, help="read from stdin")
+    parser.add_argument("-i", "--infile", type=str, help="input file")
+    parser.add_argument("-o", "--outfile", type=str, help="output file")
+    parser.add_argument('--gtype', default='', type=str)
+    args = parser.parse_args()
 
     db = ESWrapper(index_name="geonames", doc_type="places")
-    GEO = BaseGeo(db)
-    print(GEO.geocode_fromList(["US", "Arlington", "Virginia"], [])[0])
+    if args.gtype == 'steiner':
+        GEO = SteinerGeo(db, spacy=True)
+    else:
+        GEO = BaseGeo(db, spacy=True)
 
-    print(GEO.gazetteer.db.near_geo([-77.06, 38.5249])[0].__dict__)
-    
+
+    #print(GEO.annotate({'BasisEnrichment':{'entities': [{'neType': 'GPE', 'expr': 'Arlington'},
+    #                                                    {'neType': 'ORG', 'expr': 'Virginia'},
+    #                                                    {'neType': 'NORP', 'expr': 'United States'}]}}))
+
+    #print(GEO.geocode_fromList(["US", "Arlington", "Virginia"], [])[0])
+
+    #print(GEO.gazetteer.db.near_geo([-77.06, 38.5249])[0].__dict__)
+
 
     # if args.cat:
         # infile = sys.stdin
         # outfile = sys.stdout
     # else:
-        # infile = smart_open(args.infile)
-        # outfile = smart_open(args.outfile, "wb")
+    infile = smart_open(args.infile)
+    outfile = smart_open(args.outfile, "w")
 
-    # lno = 0
-    # # wp = WorkerPool(infile, outfile, partfunc, 500)
-    # # wp.run()
+    lno = 0
+    wp = WorkerPool(infile, outfile, tmpfun, 500)
+    wp.run()
     # for l in infile:
         # try:
             # #j = json.loads(l)
