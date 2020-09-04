@@ -15,7 +15,7 @@ from . import GeoPoint, blacklist, loc_default, CountryDB, AdminDB, FEATURE_WEIG
 from .loc_config import reduce_stopwords, remove_administrativeNames, stop_words as STOP_WORDS
 # from pylru import lrudecorator
 import logging
-import ipdb
+import pdb
 from elasticsearch import Elasticsearch
 # from elasticsearch_dsl import Search
 # from elasticsearch_dsl import Search, Q
@@ -90,7 +90,7 @@ class GeoNames(BaseGazetteer):
         reduceFlag = kwargs.pop('reduce', False)
         if ("fuzzy" in kwargs and kwargs['fuzzy'] != 0):
             name = self.db.remove_dynamic_stopwords(name)
-            
+
         ldist = self._query(name, min_popln=min_popln, **kwargs)
         ldist = self._get_loc_confidence(ldist, min_popln)
 
@@ -125,29 +125,34 @@ class GeoNames(BaseGazetteer):
         popsum = sum(np.log([(float(l.population) + 10.0) for l in ldist]))
         rmset = set()
         featuresum = sum([FEATURE_WEIGHTS.get(l.featureCode, 0.05) for l in ldist])
+        scoresum = sum([l._score for l in ldist])
         for idx, l in enumerate(ldist):
             # if l.featureClass.lower() == "l":
             #    rmset.add(idx)
 
             l['poplnConf'] = (np.log(float(l.population) + 10.0) / popsum)
             l['hierConf'] = (FEATURE_WEIGHTS.get(l.featureCode, 0.05) / featuresum)
+            l['scoreConf'] = (l._score / scoresum)
             if self.escore:
-                l.confidence = (l['poplnConf'] + l['hierConf'])/2 * self.escore
+                l.confidence = (0.5 * l['poplnConf'] + 0.25 * l['hierConf'] + 0.25 * l['scoreConf']) * self.escore
 
-        if len(rmset) < len(ldist):
+        if rmset and (len(rmset) < len(ldist)):
             ldist = [l for idx, l in enumerate(ldist) if idx not in rmset]
-            popsum = sum([(float(l.population) + 10.0) for l in ldist])
+            popsum = sum(np.log([(float(l.population) + 10.0) for l in ldist]))
             featuresum = sum([FEATURE_WEIGHTS.get(l.featureCode, 0.05) for l in ldist])
+            scoresum = sum([l._score for l in ldist])
             for l in ldist:
                 l['poplnConf'] = (np.log(float(l.population) + 10.0) / popsum)
                 l['hierConf'] = (FEATURE_WEIGHTS.get(l.featureCode, 0.05) / featuresum)
+                l['scoreConf'] = (l._score / scoresum)
                 # l.confidence = ((float(l.population) + 10.0) / popsum)
                 if self.escore:
-                    l.confidence = (l['poplnConf'] + l['hierConf'])/2 * self.escore
+                    # l.confidence = (l['poplnConf'] + l['hierConf'])/2 * self.escore
+                    l.confidence = (0.5* l['poplnConf'] + 0.25 * l['hierConf'] + 0.25* l['scoreConf']) * self.escore
                     # l.confidence = l.confidence * self.escore
 
         return ldist
-    
+
     def _get_loc_confidence_byUniform(self, ldist, min_popln):
         rmset = set()
         for idx, l in enumerate(ldist):

@@ -55,7 +55,7 @@ class WorkerPool(object):
         result = self._func(msg)
         if result is not None:
             with self._lock:
-                self._output.write((json.dumps(result, ensure_ascii=False)).encode("utf-8") + "\n")
+                self._output.write((json.dumps(result, ensure_ascii=False)) + "\n")
                 #if not result['true_geo']:
                 #    self._notruth += 1
                 #elif ('country' not in result['embersGeoCode']):
