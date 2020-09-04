@@ -12,7 +12,6 @@ __version__ = "0.0.1"
 
 import os
 import json
-import ipdb
 
 from .geoutils.dbManager import ESWrapper
 db = ESWrapper('geonames', 'places')
