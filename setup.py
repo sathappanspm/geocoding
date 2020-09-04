@@ -16,11 +16,12 @@ import os
 
 datafiles = list(glob('./TextGeo/**/*.txt', recursive=True)) + list(glob('./TextGeo/**/*.json', recursive=True))
 datafiles = [os.path.relpath(path, 'TextGeo') for path in datafiles]
-print(datafiles)
+#print(datafiles)
 
 setup(
     name="TextGeo", # Replace with your own username
     version="0.0.1",
+    url="https://github.com/sathappanspm/geocoding",
     author="Sathappan Muthiah",
     author_email="sathap1@vt.edu",
     description="Geocode Text Articles",
