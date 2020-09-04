@@ -93,7 +93,7 @@ class GeoNames(BaseGazetteer):
 
                 try:
                     df['population'] = (df['population'] + 1).astype(float)
-                except Exception, e:
+                except Exception as  e:
                     raise e
 
                 #dfn = df[df["ltype"] == "city"]

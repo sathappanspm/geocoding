@@ -1,7 +1,8 @@
 {
     "settings" : {
-        "number_of_shards" : 5,
+        "number_of_shards" : 30,
         "number_of_replicas" : 1,
+        "index.requests.cache.enable": true,
     "analysis": {
         "filter": {
             "tokenlength": {"type":"length", "min":"5"}

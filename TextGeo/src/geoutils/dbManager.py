@@ -238,7 +238,7 @@ class ESWrapper(BaseDB):
     def create(self, datacsv, confDir="../data/"):
         with open(os.path.join(confDir, "es_settings.json")) as jf:
             settings = json.load(jf)
-            settings['mappings'][self._doctype] = settings['mappings']
+            #settings['mappings'][self._doctype] = settings['mappings']
 
         opres = self._opLoader(datacsv, confDir)
         helpers.bulk(self.eserver, opres, chunk_size=1000)
