@@ -10,14 +10,14 @@ __author__ = "Sathappan Muthiah"
 __email__ = "sathap1@vt.edu"
 __version__ = "0.0.1"
 
-from workerpool import WorkerPool
-from geoutils.gazetteer_mod import GeoNames
-from geoutils.dbManager import ESWrapper
+#from workerpool import WorkerPool
+from .geoutils.gazetteer_mod import GeoNames
+from .geoutils.dbManager import ESWrapper
 from collections import defaultdict
 from urllib.parse import urlparse
-from geoutils import LocationDistribution
+from .geoutils import LocationDistribution
 import logging
-from geoutils import encode, isempty
+from .geoutils import encode, isempty
 import json
 import pdb
 import re
@@ -29,12 +29,12 @@ tracer.setLevel(logging.CRITICAL)  # or desired level
 tracer = logging.getLogger('urllib3')
 tracer.setLevel(logging.CRITICAL)  # or desired level
 # tracer.addHandler(logging.FileHandler('indexer.log'))
-logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
-log = logging.getLogger("rssgeocoder")
+log = logging.getLogger("main.rssgeocoder")
 
 
 class BaseGeo(object):
-    def __init__(self, db, min_popln=0, min_length=1, spacy=False, nerKeyMap=None):
+    def __init__(self, db, min_popln=0, min_length=1, spacy=False, nerKeyMap=None, confMethod='Fusion',
+                 include_org=False):
 
         DEFAULT_NER_MAP = {'LOCATION': 'LOCATION', 'ORGANIZATION': 'ORGANIZATION',
                 'NATIONALITY': 'NATIONALITY', 'OTHER': 'OTHER', 'PERSON': 'PERSON'}
@@ -53,16 +53,19 @@ class BaseGeo(object):
             nerKeyMap['LOC'] = 'LOCATION'
 
         self.nerKeyMap = nerKeyMap
-        self.gazetteer = GeoNames(db)
+        self.gazetteer = GeoNames(db, confMethod=confMethod)
         self.min_popln = min_popln
         self.min_length = min_length
         self.weightage = {
             "LOCATION": 1.0,
             "NATIONALITY": 0.75,
-            "ORGANIZATION": 0.5,
+            "ORGANIZATION": 0.0,
             "OTHER": 0.0,
             "PERSON": 0.0
         }
+        if include_org:
+            self.weightage['ORGANIZATION'] = 0.25
+
 
     def geocode(self, doc=None, loclist=None, eKey='BasisEnrichment', **kwargs):
         locTexts = []
@@ -86,8 +89,11 @@ class BaseGeo(object):
         if loclist is not None:
             locTexts += [l.lower() for l in loclist]
 
-        results = self.get_locations_fromURL((doc["url"] if doc.get("url", "")
+        try:
+            results = self.get_locations_fromURL((doc["url"] if doc.get("url", "")
                                               else doc.get("link", "")))
+        except:
+            results = {}
         # results = {}
         # kwargs['analyzer'] = 'standard'
         return self.geocode_fromList(locTexts, persons, results, **kwargs)
@@ -171,7 +177,8 @@ class BaseGeo(object):
         if itemtype == "LOCATION":
             res = self.gazetteer.query(item, **kwargs)
         else:
-            res = self.gazetteer.query(item, fuzzy='AUTO' if kwargs.get('doFuzzy', False) else 0, featureCode='pcli', operator='or')
+            res = self.gazetteer.query(item, fuzzy='AUTO' if kwargs.get('doFuzzy', False) else 0, featureCode='pcli',
+                                       operator='or')
             # if res == []:
             #    res = self.gazetteer.query(item)
 
@@ -236,9 +243,11 @@ class BaseGeo(object):
         try:
             lmap, gp = self.geocode(doc=doc, eKey=eKey, **kwargs)
         except UnicodeDecodeError as e:
+            print('test')
             log.exception("unable to geocode:{}".format(str(e)))
             lmap, gp = {}, {}
 
+        gp.pop('alternatenames', '')
         doc['embersGeoCode'] = gp
         doc["location_distribution"] = lmap
         return doc
@@ -246,14 +255,24 @@ class BaseGeo(object):
     def score(self, results):
         scoresheet = defaultdict(float)
         num_mentions = float(sum((l.frequency for l in results.values())))
-
+        topmatchscore = ([l.esmaxscore for l in results.values()])
+        topmatchscore = max(topmatchscore) if topmatchscore else 1e-3
         def update(l):
-            for s in l.city:
-                scoresheet[s] += l.city[s] * l.frequency
-            for s in l.admin1:
-                scoresheet[s] += l.admin1[s] * l.frequency
-            for s in l.country:
-                scoresheet[s] += l.country[s] * l.frequency
+            for s in l.realizations.values():
+                matchscore = s._score * s._esmaxscore/topmatchscore
+                lstr = "/".join([s.country, s.admin1, (getattr(s, "admin2", "") or s.city)])
+                cstr = "/".join([s.country, "", ""])
+                adminstr = "/".join([s.country, s.admin1, ""])
+                scoresheet[lstr] += l.city[lstr] * l.frequency * matchscore
+                scoresheet[adminstr] += l.admin1[s] * l.frequency * matchscore
+                scoresheet[cstr] += l.country[s] * l.frequency * matchscore
+
+            # for s in l.city:
+            #     scoresheet[s] += l.city[s] * l.frequency * matchscore
+            # for s in l.admin1:
+            #     scoresheet[s] += l.admin1[s] * l.frequency * matchscore
+            # for s in l.country:
+            #     scoresheet[s] += l.country[s] * l.frequency * matchscore
 
         _ = [update(item) for item in results.values()]
         for s in scoresheet:
@@ -478,6 +497,7 @@ if __name__ == "__main__":
     parser.add_argument("-i", "--infile", type=str, help="input file")
     parser.add_argument("-o", "--outfile", type=str, help="output file")
     args = parser.parse_args()
+    logging.basicConfig(filename='geocode.log', level=logging.DEBUG)
 
     db = ESWrapper(index_name="geonames2", doc_type="places2")
     GEO = BaseGeo(db)
@@ -490,8 +510,8 @@ if __name__ == "__main__":
         outfile = smart_open(args.outfile, "wb")
 
     lno = 0
-    wp = WorkerPool(infile, outfile, tmpfun, 500)
-    wp.run()
+    #wp = WorkerPool(infile, outfile, tmpfun, 500)
+    #wp.run()
     # for l in infile:
         # try:
             # j = json.loads(l)

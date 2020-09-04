@@ -265,6 +265,7 @@ class GeoPoint(GeoData):
         self.ltype = ltype
         self.city = ""
         self._score = kwargs.pop("_score", 1.0)
+        self._esmaxscore = kwargs.pop("_esmaxscore", 150)
         for arg in kwargs:
             setattr(self, arg, kwargs[arg])
 
@@ -360,7 +361,9 @@ class LocationDistribution(GeoData):
         if not isinstance(LocObj, list):  # and len(LocObj) == 1:
             LocObj = [LocObj]
 
+        self.esmaxscore = 0
         for l in LocObj:
+            self.esmaxscore = l._esmaxscore
             ## escape if the obtained place is encompasses the entire earth or any of the continents
             try:
                 if 'asciiname' in l.__dict__ and l.asciiname == "earth":
@@ -378,7 +381,15 @@ class LocationDistribution(GeoData):
                 self.realizations[lstr] = l
             else:
                 if self.realizations[lstr].confidence < pvalue:
+                    esscore = self.realizations[lstr]._score
+                    if esscore > l._score:
+                        l._score = esscore
+
+                    if self.realizations[lstr].population > l.population:
+                        l.population = self.realizations[lstr].population
+
                     self.realizations[lstr] = l
+
 
             cstr = "/".join([l.country, "", ""])
             adminstr = "/".join([l.country, l.admin1, ""])

@@ -171,6 +171,7 @@ class ESWrapper(BaseDB):
             t['_source']['geonameid'] = t["_source"]["id"]
             #t['_source']['_score'] = t[1] / max_score
             t['_source']['_score'] = t['_score'] / max_score
+            t['_source']['_esmaxscore'] = max_score
             pt = GeoPoint(**t["_source"])
             if t['_source']['featureCode'].lower() == "cont":
                 gps = [pt]
@@ -238,7 +239,7 @@ class ESWrapper(BaseDB):
     def create(self, datacsv, confDir="../data/"):
         with open(os.path.join(confDir, "es_settings.json")) as jf:
             settings = json.load(jf)
-            #settings['mappings'][self._doctype] = settings['mappings']
+            settings['mappings'][self._doctype] = settings['mappings']
 
         opres = self._opLoader(datacsv, confDir)
         helpers.bulk(self.eserver, opres, chunk_size=1000)
