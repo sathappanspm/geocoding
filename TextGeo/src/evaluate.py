@@ -59,7 +59,7 @@ def embersgeo(doc):
         #print eCode
         return msg
     except Exception as e:
-        print str(e)
+        print(str(e))
         error.write(doc)
 
     return None
@@ -91,7 +91,7 @@ with gzip.open("Egypt_evaluated_embers4_tp5.txt.gz", "w") as outf:
         wp = WorkerPool(inf, outf, geotest, 10)
         #wp = WorkerPool(inf, outf, embersgeo, 1)
         wp.run()
-        print wp._true, wp._false, wp._nogeo, wp._notruth
+        print(wp._true, wp._false, wp._nogeo, wp._notruth)
         #for l in inf:
         #    msg = geotest(l)
         #    outf.write(json.dumps(msg, ensure_ascii=False).encode("utf-8") + "\n")

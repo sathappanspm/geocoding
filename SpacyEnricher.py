@@ -28,9 +28,9 @@ class Enricher(object):
 
 
 class SpacyEnricher(Enricher):
-    def __init__(self, lang='en', model=None):
+    def __init__(self, lang='en_core_web_sm', model=None):
         self.engine = spacy.load(lang)
-        self.lang = lang
+        self.lang = lang.split('_', 1)[0]
         self.to_tokendict = lambda x: {'POS': x.pos_, 'lemma': x.lemma_,
                                        'value': x.orth_} #'start': x.start_char,
                                        #'end': x.start_char + len(x)}
@@ -60,8 +60,21 @@ class SpacyEnricher(Enricher):
                 except Exception as e:
                     print(str(e))
 
+    def _reader_zipnews(self, fname, contentKey):
+        with smart_open(fname) as inf:
+            for ln in json.load(inf)['articles']:
+                try:
+                    j = ln
+                    if j[contentKey]:
+                        lang = langdetect.detect(j[contentKey])
+                        if lang == self.lang:
+                            yield j
+
+                except Exception as e:
+                    print(str(e))
+
     def run(self, fname, outfname, contentKey='text'):
-        dataiter, textiter = tee(self._reader(fname, contentKey))
+        dataiter, textiter = tee(self._reader_zipnews(fname, contentKey))
         with smart_open(outfname, "wb") as outf:
             lno = 0
             for jmsg, doc in zip(dataiter,
@@ -96,7 +109,7 @@ if __name__ == "__main__":
     for fl in glob.glob('{}*'.format(args.indir)):
         outname = os.path.join(args.outdir, os.path.basename(fl))
         _input.append((fl, outname))
-        #nlp.run(fl, outname)
+        #single_run(fl, outname)
         #break
 
     Parallel(n_jobs=len(_input), backend='multiprocessing')(delayed(single_run)(*(item))

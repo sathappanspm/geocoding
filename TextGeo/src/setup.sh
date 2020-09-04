@@ -15,5 +15,5 @@ wget http://download.geonames.org/export/dump/allCountries.zip
 unzip allCountries.zip
 cd $CUR_DIR
 curl -XPUT 'localhost:9200/geonames' -H 'Content-Type: application/json' -d @../data/es_settings.json
-python initialize.py
+python3 initialize.py
 #rm -rf gnames_gaz
