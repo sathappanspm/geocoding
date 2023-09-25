@@ -1,4 +1,4 @@
-gevent==1.0.1
+gevent==23.9.1
 nltk>=3.4.5
 pyelasticsearch==1.4
 unicodecsv
